@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.0.1] - 2026-06-02
+## [1.0.1] - 2026-06-02
+
+### Fixed
+- npm package now only ships compiled `dist/` output; TypeScript source is no longer included in the tarball.
+
+## [1.0.0] - 2026-06-02
 
 ### Changed — BREAKING
 - **Slash commands renamed**: `/hula.plan` → `/hula-plan`, `/hula.fix` → `/hula-fix`,
