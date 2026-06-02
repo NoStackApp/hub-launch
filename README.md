@@ -42,9 +42,11 @@ The primary use case is AI-assisted issue development via the hula-project serve
 /hula-plan Add password reset support
 
 # 2. Upload the plan to origin/main
+#    (Optional — /hula-launch runs this automatically if skipped)
 /hula-upload
 
 # 3. Launch — creates the issue and starts the AI coding session
+#    Includes /hula-upload automatically, so step 2 can be omitted
 /hula-launch password-reset-support
 
 # 4. (AI coding agent works on the issue, creates a PR automatically)
@@ -56,6 +58,7 @@ The primary use case is AI-assisted issue development via the hula-project serve
 /hula-verify
 
 # 7. Merge and clean up
+#    Equivalent to merging the PR manually on GitHub
 /hula-merge
 ```
 

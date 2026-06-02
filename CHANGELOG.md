@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-02
+
 ### Changed — BREAKING
 - **Slash commands renamed**: `/hula.plan` → `/hula-plan`, `/hula.fix` → `/hula-fix`,
   `/hula.create` → `/hula-create`, `/hula.verify` → `/hula-verify`,
