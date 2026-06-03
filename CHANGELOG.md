@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.2] - 2026-06-02
 
 ### Fixed
+
 - `hula --version` now reports the correct version from `package.json` instead of a hardcoded value.
 
 ## [1.0.1] - 2026-06-02
