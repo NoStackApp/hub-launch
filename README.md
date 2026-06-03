@@ -1,16 +1,38 @@
 # hub-launch
 
-GitHub Issue and PR automation CLI with a plugin/hook system for project-specific customizations.
+> **Stop managing your AI agent. Start reviewing its output.**
+
+AI coding agents write great code — but you're still stuck doing the busywork around them: creating issues, wrangling branches, monitoring runs, and cleaning up afterward.
+
+hub-launch handles all of that. Describe what you want to build, and it creates the GitHub issue, runs Claude Code in an isolated Daytona cloud container, and opens the PR for your review. Nothing touches your local machine or your current branch.
+
+```bash
+/hula-plan Add password reset support    # generates plan, auto-validates
+/hula-launch password-reset-support      # creates issue, starts AI session
+# (Claude Code writes the code, runs tests, pushes branch, opens PR)
+/hula-verify                             # confirm acceptance criteria met
+/hula-merge                              # merge, close issue, restore branch
+```
+
+That's the whole workflow. Four commands from idea to merged PR.
+
+## Why hub-launch?
+
+| Without hub-launch                                                                            | With hub-launch                                                                 |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Manually create issue → set up branch → configure agent → monitor → push → open PR → clean up | `/hula-plan` → `/hula-launch` → `/hula-merge`                                   |
+| AI agent runs on your machine, blocking your environment                                      | Claude Code runs server-side in a Daytona container — zero local overhead       |
+| Coding work clutters your current branch and workspace                                        | Each issue runs in its own isolated Daytona container — your branch stays clean |
+| Each step requires switching between tools                                                    | Everything orchestrated from VS Code Copilot Chat or Claude Code                |
 
 ## Features
 
 - 🚀 **Interactive TUI** — paginated issue list with keyboard shortcuts for all actions
-- 🤖 **AI-Powered Workflow** — plan → launch → verify → merge with GitHub Copilot
+- 🤖 **AI-Powered Workflow** — plan → launch → verify → merge with GitHub Copilot or Claude Code
 - 🔄 **PR Automation** — create, watch, merge, and clean up pull requests end-to-end
-- 🌿 **Worktree Isolation** — issues run in isolated git worktrees, keeping your branch clean
-- 📋 **GitHub Projects V2** — native board integration with priority and status tracking
-- 🔌 **Plugin System** — extend with custom lifecycle hooks and service adapters
-- 🖥️ **VS Code Copilot Chat** — full `/hula-plan → /hula-merge` slash-command workflow
+- ☁️ **Daytona Container Isolation** — each issue runs in a dedicated cloud container, keeping your branch and environment clean
+-  **Plugin System** — extend with custom lifecycle hooks and service adapters
+- 🖥️ **VS Code Copilot Chat + Claude Code** — full `/hula-plan → /hula-merge` slash-command workflow
 
 ## Quick Start
 
@@ -74,15 +96,15 @@ hula launch password-reset-support .hublaunch/plans/2026-05-07-17:00-password-re
 
 Top-level commands:
 
-| Command | Alias | Description |
-|---|---|---|
-| `hublaunch` | `hula`, `hl` | Main CLI / interactive mode |
-| `hula login` | — | Authenticate with GitHub + hula-project |
-| `hula init` | — | Initialize configuration |
-| `hula create` | — | Create issue from plan file |
-| `hula merge` | — | Merge PR and clean up |
-| `hula launch` | — | Trigger AI coding session on hula-project server |
-| `hula execute` | — | Trigger or schedule an execute-action (e.g. `--built-in harden`) |
+| Command        | Alias        | Description                                                      |
+| -------------- | ------------ | ---------------------------------------------------------------- |
+| `hublaunch`    | `hula`, `hl` | Main CLI / interactive mode                                      |
+| `hula login`   | —            | Authenticate with GitHub + hula-project                          |
+| `hula init`    | —            | Initialize configuration                                         |
+| `hula create`  | —            | Create issue from plan file                                      |
+| `hula merge`   | —            | Merge PR and clean up                                            |
+| `hula launch`  | —            | Trigger AI coding session on hula-project server                 |
+| `hula execute` | —            | Trigger or schedule an execute-action (e.g. `--built-in harden`) |
 
 Run `hula <command> --help` for details, or see the full [Commands Reference](./docs/commands.md).
 
@@ -90,16 +112,16 @@ Run `hula <command> --help` for details, or see the full [Commands Reference](./
 
 After `hula init`, use these slash commands in Copilot Chat for the full AI-assisted development workflow:
 
-| Command | Description |
-|---|---|
-| `/hula-plan <description>` | Generate a detailed implementation plan **and auto-run validation in the same session** |
-| `/hula-confirm` | Runs automatically after `/hula-plan`; invoke standalone to re-validate a plan you've edited |
-| `/hula-upload` | Sync the plan to origin/main |
-| `/hula-launch <name>` | **Start the AI coding session** — triggers full server-based pipeline |
-| `/hula-create <name>` | Create a GitHub issue only (no server session) |
-| `/hula-fix <problem>` | Apply fixes on the PR branch |
-| `/hula-verify` | Check all acceptance criteria are met |
-| `/hula-merge` | Merge PR, close issue, and restore your branch |
+| Command                    | Description                                                                                  |
+| -------------------------- | -------------------------------------------------------------------------------------------- |
+| `/hula-plan <description>` | Generate a detailed implementation plan **and auto-run validation in the same session**      |
+| `/hula-confirm`            | Runs automatically after `/hula-plan`; invoke standalone to re-validate a plan you've edited |
+| `/hula-upload`             | Sync the plan to origin/main                                                                 |
+| `/hula-launch <name>`      | **Start the AI coding session** — triggers full server-based pipeline                        |
+| `/hula-create <name>`      | Create a GitHub issue only (no server session)                                               |
+| `/hula-fix <problem>`      | Apply fixes on the PR branch                                                                 |
+| `/hula-verify`             | Check all acceptance criteria are met                                                        |
+| `/hula-merge`              | Merge PR, close issue, and restore your branch                                               |
 
 Full walkthrough: [docs/vscode-workflow.md](./docs/vscode-workflow.md).
 
@@ -107,17 +129,17 @@ Full walkthrough: [docs/vscode-workflow.md](./docs/vscode-workflow.md).
 
 `hula launch` submits a job to the hula-project server, which runs an AI coding agent (Claude Code) through a fixed 9-step pipeline:
 
-| Step | Description |
-|---|---|
-| 1 | Change to worktree directory (worktree is created before the pipeline starts) |
-| 2 | Bug review & fix loop (LLM-based review with iterative fixes) |
-| 3 | Commit remaining changes |
-| 4 | TypeScript / lint check (`pnpm check`) |
-| 5 | Production build (`pnpm build`) |
-| 6 | Regression tests |
-| 7 | Push branch to origin |
-| 8 | Merge latest main |
-| 9 | Cleanup & create PR |
+| Step | Description                                                                   |
+| ---- | ----------------------------------------------------------------------------- |
+| 1    | Change to worktree directory (worktree is created before the pipeline starts) |
+| 2    | Bug review & fix loop (LLM-based review with iterative fixes)                 |
+| 3    | Commit remaining changes                                                      |
+| 4    | TypeScript / lint check (`pnpm check`)                                        |
+| 5    | Production build (`pnpm build`)                                               |
+| 6    | Regression tests                                                              |
+| 7    | Push branch to origin                                                         |
+| 8    | Merge latest main                                                             |
+| 9    | Cleanup & create PR                                                           |
 
 Use `--resume <step>` to re-run from a specific step after a failure, without re-doing earlier steps:
 
@@ -133,17 +155,17 @@ hula launch my-issue .hublaunch/plans/my-plan.md --resume 7 --fix "address build
 
 ## Documentation
 
-| Document | Description |
-|---|---|
-| [Getting Started](./docs/getting-started.md) | Install, configure, and create your first issue |
-| [Commands Reference](./docs/commands.md) | Every CLI command with options and examples |
-| [Configuration](./docs/configuration.md) | Config file, env vars, polling, init options |
-| [VS Code Workflow](./docs/vscode-workflow.md) | Copilot Chat `/hula-*` commands |
-| [Hooks & Plugins](./docs/hooks-and-plugins.md) | Lifecycle hooks and custom service adapters |
-| [Token Management](./docs/token-management.md) | GitHub tokens, storage, and refresh flow |
-| [Migration Guide](./docs/migration-guide.md) | Switching to the hula-project server |
-| [Architecture](./docs/architecture.md) | For contributors: structure, patterns, SOLID |
-| [Troubleshooting](./docs/troubleshooting.md) | Common issues and fixes |
+| Document                                       | Description                                     |
+| ---------------------------------------------- | ----------------------------------------------- |
+| [Getting Started](./docs/getting-started.md)   | Install, configure, and create your first issue |
+| [Commands Reference](./docs/commands.md)       | Every CLI command with options and examples     |
+| [Configuration](./docs/configuration.md)       | Config file, env vars, polling, init options    |
+| [VS Code Workflow](./docs/vscode-workflow.md)  | Copilot Chat `/hula-*` commands                 |
+| [Hooks & Plugins](./docs/hooks-and-plugins.md) | Lifecycle hooks and custom service adapters     |
+| [Token Management](./docs/token-management.md) | GitHub tokens, storage, and refresh flow        |
+| [Migration Guide](./docs/migration-guide.md)   | Switching to the hula-project server            |
+| [Architecture](./docs/architecture.md)         | For contributors: structure, patterns, SOLID    |
+| [Troubleshooting](./docs/troubleshooting.md)   | Common issues and fixes                         |
 
 The full documentation index is at [docs/README.md](./docs/README.md).
 
