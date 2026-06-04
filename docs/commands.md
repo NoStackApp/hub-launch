@@ -13,7 +13,6 @@ Complete reference for every hula CLI command.
 | `hula merge`   | —     | Merge PR and clean up                                             |
 | `hula launch`  | —     | Trigger a launch job on hula-project server                       |
 | `hula execute` | —     | Trigger or schedule an execute-action (e.g. `--built-in harden`) |
-| `hula upload`  | —     | Upload a plan file to origin/main                                 |
 | `hula logs`    | —     | View logs by request ID                                           |
 
 ## Global Options
@@ -150,19 +149,6 @@ Selected options:
 | `--project <owner/repo>` | Override the target repository |
 
 Run `hula execute --help` for the full option list.
-
----
-
-## `hula upload`
-
-Upload a plan file to `origin/main` so it can be accessed by the hula-project server when launching.
-
-```bash
-hula upload                               # Upload the most recent plan
-hula upload .hublaunch/plans/my-plan.md   # Upload a specific plan
-```
-
-The command creates a temporary worktree from `origin/main`, commits the plan file, pushes it, then removes the worktree. Your local working tree is untouched.
 
 ---
 
