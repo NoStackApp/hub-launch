@@ -34,8 +34,25 @@ That's the whole fundamental workflow.
 - 🖥️ **Client Agnostic** — based on skills that can be adapted to most agent harnesses
 - 🔔 **Notifications** - you can configure an endpoint for notifications about progress. For instance, a slack channel.
 - 📋 **Logging** - run `hula-log` for progress in the container. Also pushes several documents within each PR showing logging.
-- 🖥️ **Console** - check out the status of all launched plans on our console
+- 🖥️ **Dashboard** — track all your active plans at [https://www.hublaunch.site/dashboard](https://www.hublaunch.site/dashboard)
 - 🔒 **Safe** - tokens are maintained by you locally in your config file, and on our server securely protected and removed when no longer needed.
+- 🚀 **Two Tiers** — Free and Pro subscriptions; see below for details
+
+### Free vs Pro
+
+| Feature | Free | Pro |
+|---|---|---|
+| Plan generation (`/hula-plan`) | ✅ | ✅ |
+| Issue creation (`hula create` / `/hula-create`) | ✅ | ✅ |
+| Assign issue to GitHub Copilot | ✅ | ✅ |
+| AI-powered full launch (`hula launch` / `/hula-launch`) | ❌ | ✅ |
+| Unlimited plan launches | ❌ | ✅ |
+
+`hula launch` is a Pro feature. It runs a full automated pipeline in a cloud container (Claude Code via Daytona), creates a branch, runs tests, and opens a PR — all without touching your local machine.
+
+On the Free tier, use `/hula-create` to create a GitHub issue and assign it to GitHub Copilot. Copilot will attempt to implement it directly on GitHub.
+
+To upgrade to Pro, visit [https://www.hublaunch.site](https://www.hublaunch.site).
 
 ## Quick Start
 
@@ -164,6 +181,8 @@ See the [Commands Reference](./docs/commands.md) for available commands.
 
 ## Links
 
+- [HubLaunch Website](https://www.hublaunch.site)
+- [Dashboard](https://www.hublaunch.site/dashboard)
 - [GitHub Repository](https://github.com/NoStackApp/hub-launch)
 - [Issue Tracker](https://github.com/NoStackApp/hub-launch/issues)
 - [Documentation](./docs/README.md)
