@@ -18,7 +18,7 @@ That's the whole fundamental workflow.
 
 ## Demo
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/dQw4w9WgXcQ" frameborder="0" allowfullscreen></iframe>
+[![Watch hub-launch demo on YouTube](https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
 
 ## Why hub-launch?
 
