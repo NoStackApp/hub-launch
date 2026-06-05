@@ -16,6 +16,10 @@ hub-launch handles all of that by removing most of the interruptions and only re
 
 That's the whole fundamental workflow.
 
+## Demo
+
+[![Watch hub-launch demo on YouTube](https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
+
 ## Why hub-launch?
 
 | Without hub-launch                                                                            | With hub-launch                                                                 |
