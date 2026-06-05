@@ -16,6 +16,10 @@ hub-launch handles all of that by removing most of the interruptions and only re
 
 That's the whole fundamental workflow.
 
+## Demo
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/dQw4w9WgXcQ" frameborder="0" allowfullscreen></iframe>
+
 ## Why hub-launch?
 
 | Without hub-launch                                                                            | With hub-launch                                                                 |
@@ -70,8 +74,6 @@ hula init
 hula create       # create issue from plan
 hula --help
 ```
-
-Full walkthrough: [docs/getting-started.md](./docs/getting-started.md)
 
 ## Core Workflow
 
@@ -157,10 +159,9 @@ hula launch my-issue .hublaunch/plans/my-plan.md --resume 7 --fix "address build
 
 ## Documentation
 
-| Document                                     | Description                                     |
-| -------------------------------------------- | ----------------------------------------------- |
-| [Getting Started](./docs/getting-started.md) | Install, configure, and create your first issue |
-| [Commands Reference](./docs/commands.md)     | Every CLI command with options and examples     |
+| Document                                 | Description                                 |
+| ---------------------------------------- | ------------------------------------------- |
+| [Commands Reference](./docs/commands.md) | Every CLI command with options and examples |
 
 The full documentation index is at [docs/README.md](./docs/README.md).
 
