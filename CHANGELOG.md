@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-11
+
+### Added
+
+- `GitService.showFile(ref, path)` — retrieves any file from git history by ref and path, with injection guards.
+- `upload.ts` fallback: if the plan file no longer exists on disk, automatically recovers it from `git show main:<path>` so uploads never silently fail after a branch clean-up.
+- `launch.ts` resilience: treats working-tree-only plans as needing upload, so the launch flow works even when the plan hasn't been committed yet.
+
+### Improved
+
+- `/hula-launch` skill rewritten to a single-step branch + plan extraction, removing a redundant `Read` call and multi-turn reasoning overhead.
+- `hula-launch-run.sh`: `json_escape` now uses `jq` with a `sed` fallback, producing valid JSON for multi-line git error messages and removing a pre-existing double-escape bug.
+
+## [1.1.0] - 2026-06-08
+
+### Fixed
+
+- Register `create` command in CLI entry point so it is accessible from the command line.
+
 ## [1.0.3] - 2026-06-05
 
 ### Fixed
