@@ -137,6 +137,11 @@ The Daytona API key is required and resolved from `--daytona-key`, `config.dayto
 or the `DAYTONA_API_KEY` env var. The target project is resolved from `--project`,
 `config.hulaProject`, or the current git remote.
 
+The server URL defaults to `https://www.hublaunch.site` (override with `--url` or the
+`HULA_PROJECT_URL` env var). Run `hula login` first so your GitHub token is attached to the
+request automatically (the server requires it); alternatively set the `GITHUB_TOKEN` env var.
+`--outcome-type` defaults to `pr` when omitted.
+
 Selected options:
 
 | Flag | Description |
@@ -144,7 +149,7 @@ Selected options:
 | `--built-in <name>` | Built-in action name (e.g. `harden`) |
 | `--action-path <path>` | Repo-relative path or `https://` URL to a custom action file |
 | `--entry-point <path>` | Entry point for the action (file, directory, or URL) |
-| `--outcome-type <type>` | `pr`, `plan`, or `feedback` (built-in actions default from server registry) |
+| `--outcome-type <type>` | `pr`, `plan`, or `feedback` (defaults to `pr` when omitted) |
 | `--schedule <cron>` | Cron expression — creates a recurring schedule instead of a one-off run |
 | `--project <owner/repo>` | Override the target repository |
 

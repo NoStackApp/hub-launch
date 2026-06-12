@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-06-12
+
+### Fixed
+
+- `hula execute` now attaches the GitHub token to the request (parity with `hula launch`), resolved from `hula login` credentials or the `GITHUB_TOKEN` environment variable — the server hard-requires it on `POST /api/v1/execute`.
+- `hula execute` defaults the server URL to `https://www.hublaunch.site` instead of erroring out when no URL is configured; still overridable via `--url` or `HULA_PROJECT_URL`.
+- `--outcome-type` now defaults to `pr` when omitted and is validated against `pr`, `plan`, and `feedback`, rejecting invalid values with a clear error.
+
+### Documentation
+
+- Added a `hula execute` section to `README.md` and documented the new server URL, GitHub token, and `--outcome-type` defaults in `docs/commands.md`.
+
 ## [1.2.0] - 2026-06-11
 
 ### Added

@@ -159,6 +159,24 @@ hula launch my-issue .hublaunch/plans/my-plan.md --resume 7 --fix "address build
 
 > **Note**: `--fix` requires `--resume` and passes instructions to the AI agent for that stage.
 
+## `hula execute`
+
+`hula execute` triggers a built-in or custom execute-action (e.g. the `harden` security audit) on the hula-project server, which provisions a sandbox to run it and opens a PR / plan / feedback as the outcome.
+
+```bash
+# Run the built-in harden action against src/
+hula execute --built-in harden --entry-point src/
+
+# Run a custom action file
+hula execute --action-path skills/my-action.md
+```
+
+Defaults and requirements:
+
+- **Server URL**: defaults to `https://www.hublaunch.site`. Override with `--url <url>` or the `HULA_PROJECT_URL` environment variable.
+- **`--outcome-type`**: defaults to `pr`. Valid values are `pr`, `plan`, and `feedback`.
+- **GitHub login**: run `hula login` first so your GitHub token is attached to the request automatically (the server requires it). Alternatively, set the `GITHUB_TOKEN` environment variable.
+
 ## Documentation
 
 | Document                                 | Description                                 |
