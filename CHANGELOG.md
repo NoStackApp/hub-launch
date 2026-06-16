@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-06-16
+
+### Fixed
+
+- `hula execute` now attaches the Anthropic OAuth token to the request, matching `hula launch`. Previously the token was never sent, so sandbox runs failed because the container had no `CLAUDE_CODE_OAUTH_TOKEN`. The token is resolved from `--anthropic-key`, then `config.anthropicApiKey` in `.hublaunch/hublaunch.config.js`, then the `ANTHROPIC_API_KEY` environment variable, and must be an OAuth token (`sk-ant-oat…`) — standard API keys (`sk-ant-api03-…`) are rejected with a clear error.
+
+### Added
+
+- `hula execute --anthropic-key <key>` flag for supplying the Anthropic OAuth token directly.
+
+### Changed
+
+- Extracted a shared `resolveEphemeralCredentials()` resolver (`src/utils/ephemeral-credentials.ts`) used by both `launch` and `execute`, making credential precedence and validation a single source of truth (DRY). Resolution is now pure and side-effect free; each command owns how it presents errors.
+
+### Documentation
+
+- Documented the Anthropic OAuth token and Daytona API key requirements for `hula execute` in `README.md` and `docs/commands.md`, including the new `--anthropic-key` and `--daytona-key` options.
+
+## [1.2.1] - 2026-06-12
+
+### Fixed
+
+- `hula execute` now attaches the GitHub token to the request (parity with `hula launch`), resolved from `hula login` credentials or the `GITHUB_TOKEN` environment variable — the server hard-requires it on `POST /api/v1/execute`.
+- `hula execute` defaults the server URL to `https://www.hublaunch.site` instead of erroring out when no URL is configured; still overridable via `--url` or `HULA_PROJECT_URL`.
+- `--outcome-type` now defaults to `pr` when omitted and is validated against `pr`, `plan`, and `feedback`, rejecting invalid values with a clear error.
+
+### Documentation
+
+- Added a `hula execute` section to `README.md` and documented the new server URL, GitHub token, and `--outcome-type` defaults in `docs/commands.md`.
+
 ## [1.2.0] - 2026-06-11
 
 ### Added
