@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-06-19
+
+### Added
+
+- `hula merge` now automatically fast-forwards your **local** root `main` to match `origin/main` after a successful merge — no manual `git pull` needed. It is cwd-independent (works even when `hula merge` runs from inside a worktree, via the new `WorktreeService.getMainWorktree()`), fast-forward only, and fully guarded: the update is skipped with a warning (never an error, since the PR is already merged remotely) when the project root isn't on the default branch, has uncommitted changes, or can't fast-forward. When it succeeds, the merge summary reports `✓ Local main updated to latest origin`.
+- `WorktreeService.getMainWorktree()` — returns the project root (main) worktree's path and checked-out branch by reading the first entry of `git worktree list --porcelain`, so it stays correct even when called from inside a linked worktree.
+
+### Documentation
+
+- Documented the post-merge local `main` fast-forward behavior in `README.md` and `docs/commands.md`.
+- Expanded the `hula execute` reference: marked each flag as required/optional, added cron schedule examples, and noted that the `/hula-execute` agent skill can drive the command from plain language (translating schedule phrasing into cron and confirming before running).
+
+## [1.2.3] - 2026-06-16
+
+### Fixed
+
+- `hula logs` no longer fails with "Server URL and API key are required" when `.hublaunch/hublaunch.config.js` has a `hulaApiKey` but no `hulaProjectUrl` (and `HULA_PROJECT_URL` is unset). It now falls back to the default `HULA_PROJECT_URL` (`https://www.hublaunch.site`), matching `launch`, `execute`, and `login`. The same fallback was applied to the job-status and job-log paths in `hula launch`.
+- `hula login` now writes `hulaProjectUrl` to the config even when an API key is already present. Previously the URL was only saved on first login, so re-running `hula login` on a config that already had `hulaApiKey` but no URL never repaired it — leaving commands like `hula logs` unable to resolve the server.
+
+### Internal
+
+- `publish-to-npm` workflow now posts a Slack notification on release publish success and failure (`notify-success` / `notify-failure` jobs). Self-guarded: skips on forks and no-ops when the optional `SLACK_RELEASE_WEBHOOK_URL` secret is unset.
+
+## [1.2.2] - 2026-06-16
+
+### Fixed
+
+- `hula execute` now attaches the Anthropic OAuth token to the request, matching `hula launch`. Previously the token was never sent, so sandbox runs failed because the container had no `CLAUDE_CODE_OAUTH_TOKEN`. The token is resolved from `--anthropic-key`, then `config.anthropicApiKey` in `.hublaunch/hublaunch.config.js`, then the `ANTHROPIC_API_KEY` environment variable, and must be an OAuth token (`sk-ant-oat…`) — standard API keys (`sk-ant-api03-…`) are rejected with a clear error.
+
+### Added
+
+- `hula execute --anthropic-key <key>` flag for supplying the Anthropic OAuth token directly.
+
+### Changed
+
+- Extracted a shared `resolveEphemeralCredentials()` resolver (`src/utils/ephemeral-credentials.ts`) used by both `launch` and `execute`, making credential precedence and validation a single source of truth (DRY). Resolution is now pure and side-effect free; each command owns how it presents errors.
+
+### Documentation
+
+- Documented the Anthropic OAuth token and Daytona API key requirements for `hula execute` in `README.md` and `docs/commands.md`, including the new `--anthropic-key` and `--daytona-key` options.
+
+## [1.2.1] - 2026-06-12
+
+### Fixed
+
+- `hula execute` now attaches the GitHub token to the request (parity with `hula launch`), resolved from `hula login` credentials or the `GITHUB_TOKEN` environment variable — the server hard-requires it on `POST /api/v1/execute`.
+- `hula execute` defaults the server URL to `https://www.hublaunch.site` instead of erroring out when no URL is configured; still overridable via `--url` or `HULA_PROJECT_URL`.
+- `--outcome-type` now defaults to `pr` when omitted and is validated against `pr`, `plan`, and `feedback`, rejecting invalid values with a clear error.
+
+### Documentation
+
+- Added a `hula execute` section to `README.md` and documented the new server URL, GitHub token, and `--outcome-type` defaults in `docs/commands.md`.
+
 ## [1.2.0] - 2026-06-11
 
 ### Added
