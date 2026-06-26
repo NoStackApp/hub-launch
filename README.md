@@ -42,23 +42,20 @@ That's the whole fundamental workflow.
 - 📋 **Logging** - run `hula-log` for progress in the container. Also pushes several documents within each PR showing logging.
 - 🖥️ **Dashboard** — track all your active plans at [https://www.hublaunch.site/dashboard](https://www.hublaunch.site/dashboard)
 - 🔒 **Safe** - tokens are maintained by you locally in your config file, and on our server securely protected and removed when no longer needed.
-- 🚀 **Two Tiers** — Free and Pro subscriptions; see below for details
 
-### Free vs Pro
+### The Workflow
 
-| Feature | Free | Pro |
-|---|---|---|
-| Plan generation (`/hula-plan`) | ✅ | ✅ |
-| Issue creation (`hula create` / `/hula-create`) | ✅ | ✅ |
-| Assign issue to GitHub Copilot | ✅ | ✅ |
-| AI-powered full launch (`hula launch` / `/hula-launch`) | ❌ | ✅ |
-| Unlimited plan launches | ❌ | ✅ |
+All users follow the same workflow:
 
-`hula launch` is a Pro feature. It runs a full automated pipeline in a cloud container (Claude Code via Daytona), creates a branch, runs tests, and opens a PR — all without touching your local machine.
+```
+/hula-plan → /hula-launch → /hula-verify → /hula-fix (if needed)
+```
 
-On the Free tier, use `/hula-create` to create a GitHub issue and assign it to GitHub Copilot. Copilot will attempt to implement it directly on GitHub.
+`/hula-launch` runs a full automated pipeline in a cloud container (Claude Code via Daytona) — it creates the GitHub issue, runs the implementation, executes tests, and opens a PR, all without touching your local machine. `/hula-verify` checks the PR against the plan's acceptance criteria, and `/hula-fix` addresses any gaps. `/hula-merge` merges and cleans up when you're ready.
 
-To upgrade to Pro, visit [https://www.hublaunch.site](https://www.hublaunch.site).
+Visit [https://www.hublaunch.site](https://www.hublaunch.site) for plans and pricing.
+
+> ℹ️ Historically, HubLaunch offered a Free tier (`/hula-create`, which assigned issues to GitHub Copilot) alongside a Pro tier. The current workflow unifies on Claude Code via `/hula-launch` for all users. The legacy `/hula-create` command remains available for backward compatibility but is no longer the recommended path.
 
 ## Quick Start
 
@@ -73,9 +70,28 @@ cd <your-project>
 hula init
 
 # 3. Use it
-hula create       # create issue from plan
+hula launch <branch-name>   # create the issue and start the AI coding session
 hula --help
 ```
+
+### Upgrading
+
+After upgrading the CLI:
+
+```bash
+npm install -g hub-launch@latest   # or: pnpm add -g hub-launch
+```
+
+re-run `hula init` inside each project to refresh the bundled Agent Skills,
+instruction templates, and config scaffolding:
+
+```bash
+cd <your-project>
+hula init   # safe to re-run; preserves your keys and team settings
+```
+
+The CLI reminds you automatically when a project was initialized with a
+different version than the one currently installed.
 
 ## Core Workflow
 
@@ -147,6 +163,11 @@ Run `hula <command> --help` for details, or see the full [Commands Reference](./
 | 8    | Merge latest main                                                             |
 | 9    | Cleanup & create PR                                                           |
 
+> 💡 After a PR is merged, `hula merge` automatically fast-forwards your **local**
+> `main` at the project root to match `origin/main` — no manual `git pull` needed.
+> It is non-destructive (fast-forward only) and works even when run from inside a
+> worktree; it is skipped safely if local `main` can't fast-forward.
+
 Use `--resume <step>` to re-run from a specific step after a failure, without re-doing earlier steps:
 
 ```bash
@@ -158,6 +179,99 @@ hula launch my-issue .hublaunch/plans/my-plan.md --resume 7 --fix "address build
 ```
 
 > **Note**: `--fix` requires `--resume` and passes instructions to the AI agent for that stage.
+
+### Forwarding environment variables to the container
+
+Tests that need credentials (a test user login, a third-party API key, etc.) can
+have those values forwarded from your local `.env` into the launch container.
+The easiest way to set this up is the **`hula init`** prompt — the last question,
+_"Environment variables to forward to tests…"_, accepts a comma-separated list of
+names or the literal `all`. You can also list the variable **names** in `envVars`
+in `.hublaunch/hublaunch.config.js` directly:
+
+```js
+export const config = {
+  // ...
+  envVars: ["TEST_USER_EMAIL", "API_KEY"], // names only — values are read from .env
+};
+```
+
+To forward **every** non-reserved variable from `.env` without listing each one,
+set `envVars` to the string `"all"` (or type `all` at the init prompt):
+
+```js
+export const config = {
+  // ...
+  envVars: "all", // forward all non-reserved variables found in .env
+};
+```
+
+At launch time `hula launch` reads your project's `.env`, picks out exactly those
+variables, and includes them in the request to the server. Notes:
+
+- **Opt-in** — only the names you list are forwarded (or, with `"all"`, every
+  non-reserved variable in `.env`); nothing is sent by default, so existing
+  configs are unaffected.
+- **Validated early** — if a listed variable is missing from `.env`, or the `.env`
+  file is absent, `hula launch` fails before submitting the job.
+- **Reserved names blocked** — system/internal variables (e.g. `PATH`, `HOME`,
+  `ANTHROPIC_API_KEY`, `AWS_SECRET_ACCESS_KEY`) cannot be forwarded.
+- Only forward variables your tests actually need; treat anything you list as
+  leaving your machine.
+
+## `hula execute`
+
+`hula execute` triggers a built-in or custom execute-action (e.g. the `harden` security audit) on the hula-project server, which provisions a sandbox to run it and opens a PR / plan / feedback as the outcome.
+
+```bash
+# Run the built-in harden action against src/
+hula execute --built-in harden --entry-point src/
+
+# Run a custom action file
+hula execute --action-path skills/my-action.md
+
+# Recurring schedule (cron)
+hula execute --built-in harden --entry-point src/ --schedule "0 3 * * *"
+```
+
+> **Tip**: prefer the `/hula-execute` agent skill to drive this command from plain
+> language — e.g. `/hula-execute harden src/ every night and open a PR`. It
+> translates schedule phrasing into cron and confirms before running.
+>
+> The skill can also **author an action from a description** and **manage** runs
+> and schedules conversationally:
+>
+> ```text
+> # Describe an action — the skill asks questions, writes & publishes the file, then runs it
+> /hula-execute remove unreachable code in src/ every night and open a PR
+>
+> # Manage
+> /hula-execute list
+> /hula-execute show <runId>
+> /hula-execute run now <scheduleId>
+> /hula-execute cancel <scheduleId>          # offers to delete the related action file
+> /hula-execute update <scheduleId> cron to every Monday 9am
+> /hula-execute update the skill file for <scheduleId> to also remove unused imports
+> ```
+>
+> Authored actions are written to `.hublaunch/skills/<YYYY-MM-DD-HH:MM-slug>.md`
+> and pushed to `origin/main` via a temporary worktree **before** the run (the
+> server reads the file from the default branch at run time).
+
+Required (provide exactly one):
+
+- **`--built-in <name>`** — a built-in action name (e.g. `harden`).
+- **`--action-path <path>`** — a repo-relative path or `https://` URL to a custom action file.
+
+Optional flags include `--entry-point <path>`, `--outcome-type <pr|plan|feedback>`, and `--schedule "<cron>"`. Run `hula execute --help` for the full grouped list and cron examples.
+
+Defaults and requirements:
+
+- **Server URL**: defaults to `https://www.hublaunch.site`. Override with `--url <url>` or the `HULA_PROJECT_URL` environment variable.
+- **`--outcome-type`**: defaults to `pr`. Valid values are `pr`, `plan`, and `feedback`.
+- **GitHub login**: run `hula login` first so your GitHub token is attached to the request automatically (the server requires it). Alternatively, set the `GITHUB_TOKEN` environment variable.
+- **Anthropic OAuth token**: an OAuth token (`sk-ant-oat…`) is required — the sandbox needs it as `CLAUDE_CODE_OAUTH_TOKEN`. It is resolved from `--anthropic-key <key>`, then `config.anthropicApiKey` in `.hublaunch/hublaunch.config.js`, then the `ANTHROPIC_API_KEY` environment variable. Get a token at [claude.ai/settings](https://claude.ai/settings) (requires a paid Claude.ai plan — Pro or Max). Standard API keys (`sk-ant-api03-…`) are not accepted.
+- **Daytona API key**: required by the server. Resolved from `--daytona-key <key>`, then `config.daytonaApiKey`, then the `DAYTONA_API_KEY` environment variable.
 
 ## Documentation
 
