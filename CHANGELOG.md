@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.1] - 2026-07-09
+
+### Added
+
+- Offer to launch automatically after plan validation completes, so you can go straight from a validated plan into a run without a separate step.
+
 ## [1.11.0] - 2026-07-08
 
 ### Added
