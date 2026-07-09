@@ -100,6 +100,9 @@ The primary use case is AI-assisted issue development via the hula-project serve
 ```bash
 # 1. Plan the feature
 #    Validation runs automatically in the same session after the plan is saved.
+#    When validation finishes, the assistant offers to launch right away with a
+#    default issue name derived from the plan (reply "yes" to launch, or decline
+#    and run /hula-launch <name> yourself later).
 /hula-plan Add password reset support
 
 # 2. Upload the plan to origin/main
