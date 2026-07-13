@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-07-13
+
+### Changed
+
+- `hula init` now preserves **all** existing config values on re-run, including custom/arbitrary keys and `hulaProject`/`hulaProjectUrl`, emitting any keys not in the documented template under a `// Preserved custom settings` block.
+- `hula init` loads an existing config via native dynamic `import()` only; the lossy regex config parser has been removed. A syntactically broken config now fails fast with guidance to fix the file or run `hula init --force` to regenerate a fresh config (custom edits will be lost). `hula init --force` now correctly skips parsing the existing file.
+
+### Removed
+
+- Removed the `overrideStartupScript` prompt from `hula init`. An existing `.hublaunch/hooks/deploymentStartupScript.ts` is never overwritten (created only when missing).
+
+## [1.11.1] - 2026-07-09
+
+### Added
+
+- Offer to launch automatically after plan validation completes, so you can go straight from a validated plan into a run without a separate step.
+
 ## [1.11.0] - 2026-07-08
 
 ### Added
