@@ -100,6 +100,9 @@ The primary use case is AI-assisted issue development via the hula-project serve
 ```bash
 # 1. Plan the feature
 #    Validation runs automatically in the same session after the plan is saved.
+#    When validation finishes, the assistant offers to launch right away with a
+#    default issue name derived from the plan (reply "yes" to launch, or decline
+#    and run /hula-launch <name> yourself later).
 /hula-plan Add password reset support
 
 # 2. Upload the plan to origin/main
@@ -243,10 +246,8 @@ tracking name, the behavior depends on the context:
 
 Tests that need credentials (a test user login, a third-party API key, etc.) can
 have those values forwarded from your local `.env` into the launch container.
-The easiest way to set this up is the **`hula init`** prompt — the last question,
-_"Environment variables to forward to tests…"_, accepts a comma-separated list of
-names or the literal `all`. You can also list the variable **names** in `envVars`
-in `.hublaunch/hublaunch.config.js` directly:
+Configure this by listing the variable **names** in `envVars` in
+`.hublaunch/hublaunch.config.js`:
 
 ```js
 export const config = {
@@ -256,7 +257,7 @@ export const config = {
 ```
 
 To forward **every** non-reserved variable from `.env` without listing each one,
-set `envVars` to the string `"all"` (or type `all` at the init prompt):
+set `envVars` to the string `"all"`:
 
 ```js
 export const config = {
