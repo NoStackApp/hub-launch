@@ -39,7 +39,7 @@ That's the whole fundamental workflow.
 -  **Configurable** — we use a Ralph script which can be extended with custom lifecycle hooks, and you can configure locally several options
 - 🖥️ **Client Agnostic** — based on skills that can be adapted to most agent harnesses
 - 🔔 **Notifications** - you can configure an endpoint for notifications about progress. For instance, a slack channel.
-- 📋 **Logging** - run `hula-log` for progress in the container. Also pushes several documents within each PR showing logging.
+- 📋 **Logging** - run `hula-info` for progress in the container. Also pushes several documents within each PR showing logging.
 - 🖥️ **Dashboard** — track all your active plans at [https://www.hublaunch.site/dashboard](https://www.hublaunch.site/dashboard)
 - 🔒 **Safe** - tokens are maintained by you locally in your config file, and on our server securely protected and removed when no longer needed.
 
@@ -100,6 +100,9 @@ The primary use case is AI-assisted issue development via the hula-project serve
 ```bash
 # 1. Plan the feature
 #    Validation runs automatically in the same session after the plan is saved.
+#    When validation finishes, the assistant offers to launch right away with a
+#    default issue name derived from the plan (reply "yes" to launch, or decline
+#    and run /hula-launch <name> yourself later).
 /hula-plan Add password reset support
 
 # 2. Upload the plan to origin/main
@@ -243,10 +246,8 @@ tracking name, the behavior depends on the context:
 
 Tests that need credentials (a test user login, a third-party API key, etc.) can
 have those values forwarded from your local `.env` into the launch container.
-The easiest way to set this up is the **`hula init`** prompt — the last question,
-_"Environment variables to forward to tests…"_, accepts a comma-separated list of
-names or the literal `all`. You can also list the variable **names** in `envVars`
-in `.hublaunch/hublaunch.config.js` directly:
+Configure this by listing the variable **names** in `envVars` in
+`.hublaunch/hublaunch.config.js`:
 
 ```js
 export const config = {
@@ -256,7 +257,7 @@ export const config = {
 ```
 
 To forward **every** non-reserved variable from `.env` without listing each one,
-set `envVars` to the string `"all"` (or type `all` at the init prompt):
+set `envVars` to the string `"all"`:
 
 ```js
 export const config = {
@@ -332,24 +333,41 @@ Defaults and requirements:
 - **Anthropic OAuth token**: an OAuth token (`sk-ant-oat…`) is required — the sandbox needs it as `CLAUDE_CODE_OAUTH_TOKEN`. It is resolved from `--anthropic-key <key>`, then `config.anthropicApiKey` in `.hublaunch/hublaunch.config.js`, then the `ANTHROPIC_API_KEY` environment variable. Get a token at [claude.ai/settings](https://claude.ai/settings) (requires a paid Claude.ai plan — Pro or Max). Standard API keys (`sk-ant-api03-…`) are not accepted.
 - **Daytona API key**: required by the server. Resolved from `--daytona-key <key>`, then `config.daytonaApiKey`, then the `DAYTONA_API_KEY` environment variable.
 
-## `hula logs`
+## `hula info`
 
-`hula logs <trackingName>` shows the live output tail for a tracked plan. Flags
-retrieve the persisted run artifacts (full run log and lessons) stored on the
-latest task instead:
+`hula info <trackingName>` surfaces facts about a tracked plan. Each flag adds a
+key to the request:
+
+| Flag                | Meaning                                                  |
+| ------------------- | -------------------------------------------------------- |
+| `--logs`            | Full stored run log                                      |
+| `--lastLogs`        | Last N lines of live output (see `--lines`)              |
+| `--diff`            | PR unified diff (fetched server-side from GitHub)        |
+| `--initial`         | Initial PR body / AI summary                             |
+| `--lessons`         | Lessons-learned content                                  |
+| `--clientSessionId` | Claude Code session id that launched the plan            |
+| `--lines <n>`       | Trailing line count for `--lastLogs` (default: 100)      |
+| `-r, --raw`         | For a single content key, print raw content to stdout    |
 
 ```bash
-hula logs my-feature                       # unchanged: live output tail (last 100 lines)
-hula logs my-feature --logs                # full stored run log (.txt content)
-hula logs my-feature --lessons             # lessons-learned content
-hula logs my-feature --all                 # lessons + full log (with section headers)
-hula logs my-feature --logs --lines 500    # last 500 lines of the full log
-hula logs my-feature --all --raw           # both, printed verbatim to stdout
+hula info my-feature --logs                 # opens the full run log in the editor
+hula info my-feature --lastLogs --lines 50   # opens the last 50 lines of live output
+hula info my-feature --diff                  # opens the PR diff
+hula info my-feature --clientSessionId       # prints the launching session id (plain)
+hula info my-feature --logs --diff           # prints a merged JSON object {logs, diff}
+hula info my-feature --logs --raw            # prints the raw run log to stdout
 ```
 
-When more than one of `--logs`/`--lessons`/`--all` is passed, precedence is
-`--all` > (`--lessons` + `--logs` → both) > single flag. Bare `hula logs <name>`
-is unchanged. See the [Commands Reference](./docs/commands.md#hula-logs) for details.
+**Output rules** (let K = number of requested keys):
+
+- **K == 1, content key** → the content is formatted, written to a temp file,
+  and opened in your editor. With `--raw` the raw content is printed to stdout.
+- **K == 1, `--clientSessionId`** → the session id (or `null`) is printed plain.
+- **K >= 2** → the keys are merged into one JSON object printed to stdout.
+
+Content keys route to `GET /api/v1/info/:planName`; `--clientSessionId` routes to
+the status endpoint. `--diff`/`--initial` can be `null` when there is no PR yet.
+See the [Commands Reference](./docs/commands.md#hula-info) for details.
 
 ## Documentation
 

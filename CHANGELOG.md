@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-07-15
+
+### Added
+
+- `hula info <trackingName>` is now the single command for surfacing plan facts. It supports `--logs`, `--lastLogs`, `--diff`, `--initial`, `--lessons`, and `--clientSessionId` (plus `--lines` and `--raw`). Content keys are fetched from the server's new `GET /api/v1/info/:planName` endpoint (hula-server PR #421); `--clientSessionId` continues to use the status endpoint. A single content key opens in your editor (or stdout with `--raw`), a single `--clientSessionId` prints the id plain, and two or more keys print one merged JSON object.
+
+### Removed
+
+- **Breaking:** removed the `hula logs` command and the `/hula-log` chat skill. Use `hula info` / `/hula-info` instead (`hula info <name> --lastLogs` replaces the old default live-tail behavior; `--logs`/`--lessons` map directly).
+
+## [1.14.0] - 2026-07-15
+
+### Added
+
+- Capture and send `clientSessionId` at launch for session tracking.
+- New `hula info` command to display client/session details.
+
+### Changed
+
+- Groundwork for the free-tier upgrade funnel in the hula launch flow.
+
+## [1.13.0] - 2026-07-14
+
+### Changed
+
+- `hula init` now prompts for **only** the two required API keys (Anthropic OAuth token and Daytona API key). Every other setting is written to `.hublaunch/hublaunch.config.js` with a sensible default (documented inline) for the user to edit manually, instead of being asked one field at a time. Re-running `hula init` preserves all previously-set values, including non-prompted fields such as `daytonaTier` and `envVars`.
+- The generated config no longer includes commented-out placeholder sections for `teamMembers`, `commandAliases`, `priorityLevels`, `issueSortOrder`, `services`, and `hooks`. These sections are written only when they hold a real value (or are preserved from an existing config on re-init); an unset optional setting is simply omitted, keeping the file compact.
+- The generated config no longer writes `trackingFile`, `createIssuesPreference`, `planChoices`, `pollingProvider`, `pollIntervalSeconds`, or `browserHeadless`. Each falls back to its documented default at load time, so behavior is unchanged; setting any of them manually in the config file still works and is preserved across re-runs.
+- Reworded the `hula init` intro and "Next steps" output to reflect the minimal prompt and point users to the config file for further customization.
+
+### Fixed
+
+- `hula init` now creates (and logs) the plans directory at the config's actual `planPath` on re-init, instead of always using the default `.hublaunch/plans`.
+
+### Removed
+
+- Removed the `daytonaTier`, `editorCommand`, `planPath`, `trackingFile`, `createIssuesPreference`, `planChoices`, `skipUntrackedPrompt`, `teamMembers`, `authProvider`, `configureVsCodeAutoApproval`, and `envVars` prompts from `hula init`. These are now configured by editing the generated config file. (VS Code auto-approval is still applied by default; auth provider defaults to `none`.)
+
+## [1.12.0] - 2026-07-13
+
+### Changed
+
+- `hula init` now preserves **all** existing config values on re-run, including custom/arbitrary keys and `hulaProject`/`hulaProjectUrl`, emitting any keys not in the documented template under a `// Preserved custom settings` block.
+- `hula init` loads an existing config via native dynamic `import()` only; the lossy regex config parser has been removed. A syntactically broken config now fails fast with guidance to fix the file or run `hula init --force` to regenerate a fresh config (custom edits will be lost). `hula init --force` now correctly skips parsing the existing file.
+
+### Removed
+
+- Removed the `overrideStartupScript` prompt from `hula init`. An existing `.hublaunch/hooks/deploymentStartupScript.ts` is never overwritten (created only when missing).
+
+## [1.11.1] - 2026-07-09
+
+### Added
+
+- Offer to launch automatically after plan validation completes, so you can go straight from a validated plan into a run without a separate step.
+
 ## [1.11.0] - 2026-07-08
 
 ### Added
