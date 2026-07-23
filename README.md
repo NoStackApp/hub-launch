@@ -39,7 +39,7 @@ That's the whole fundamental workflow.
 -  **Configurable** — we use a Ralph script which can be extended with custom lifecycle hooks, and you can configure locally several options
 - 🖥️ **Client Agnostic** — based on skills that can be adapted to most agent harnesses
 - 🔔 **Notifications** - you can configure an endpoint for notifications about progress. For instance, a slack channel.
-- 📋 **Logging** - run `hula-log` for progress in the container. Also pushes several documents within each PR showing logging.
+- 📋 **Logging** - run `hula-info` for progress in the container. Also pushes several documents within each PR showing logging.
 - 🖥️ **Dashboard** — track all your active plans at [https://www.hublaunch.site/dashboard](https://www.hublaunch.site/dashboard)
 - 🔒 **Safe** - tokens are maintained by you locally in your config file, and on our server securely protected and removed when no longer needed.
 
@@ -82,8 +82,9 @@ After upgrading the CLI:
 npm install -g hub-launch@latest   # or: pnpm add -g hub-launch
 ```
 
-re-run `hula init` inside each project to refresh the bundled Agent Skills,
-instruction templates, and config scaffolding:
+re-run `hula init` inside each project to refresh the bundled Agent Skills and
+config scaffolding (workflow scripts and instruction docs now ship with the
+package, so they update automatically with the CLI):
 
 ```bash
 cd <your-project>
@@ -100,10 +101,15 @@ The primary use case is AI-assisted issue development via the hula-project serve
 ```bash
 # 1. Plan the feature
 #    Validation runs automatically in the same session after the plan is saved.
+#    When validation finishes, the assistant offers to launch right away with a
+#    default issue name derived from the plan (reply "yes" to launch, or decline
+#    and run /hula-launch <name> yourself later).
 /hula-plan Add password reset support
 
 # 2. Upload the plan to origin/main
 #    (Optional — /hula-launch runs this automatically if skipped)
+#    The upload auto-retries (fetch + rebase, up to 3 attempts) if origin/main
+#    advances mid-push; a genuine conflict fails fast with a clear message.
 /hula-upload
 
 # 3. Launch — creates the issue and starts the AI coding session
@@ -144,8 +150,40 @@ Top-level commands:
 | `hula merge`   | —     | Merge PR and clean up                                            |
 | `hula launch`  | —     | Trigger AI coding session on hula-project server                 |
 | `hula schedule` | —     | Trigger or schedule an execute-action (e.g. `--built-in harden`) |
+| `hula script <name>` | — | Run a bundled cross-platform workflow script (used by the Agent Skills) |
+| `hula instructions <name>` | — | Print a bundled instruction doc (`planning`, `proceed`, `skill-creation`) |
+| `hula session-hook` | — | Claude Code PreToolUse hook that captures launch-session provenance |
 
 Run `hula <command> --help` for details, or see the full [Commands Reference](./docs/commands.md).
+
+### Cross-platform, low-footprint tooling
+
+The workflow scripts and instruction documents that power the Agent Skills ship
+**inside the `hula` package** as cross-platform Node — they are no longer copied
+into your repo, and they need **no `bash` and no `jq`**, so they run identically
+on macOS, Linux, and Windows. `hula init` therefore does not write
+`.github/scripts/*.sh` or `.hublaunch/*-instructions.md`.
+
+Skills invoke them via the global bin:
+
+```bash
+# Run a bundled workflow script (cross-platform, no bash/jq)
+hula script merge-local -- 42 ".hula-worktrees/issue-42" "fix(#42): message"
+
+# Print a bundled instruction document
+hula instructions planning
+```
+
+**Migration:** upgrading from an older version? Existing
+`.github/scripts/hula-*.sh` and `.hublaunch/*-instructions.md` keep working, but
+are now obsolete and safe to delete — `hula init` prints a reminder listing them
+(it never deletes anything).
+
+**Claude Code commands:** the `/hula-*` commands are available as a Claude Code
+plugin so they load globally, so `hula init` no longer writes `.claude/commands/*`
+symlinks by default. Prefer repo-local command files instead? Run
+`hula init --with-claude-commands`. The committed `.agents/skills/` directory
+(read by GitHub Copilot, Cursor, Codex, and 30+ tools) is unchanged.
 
 ## `hula launch` and Resume
 
@@ -243,10 +281,8 @@ tracking name, the behavior depends on the context:
 
 Tests that need credentials (a test user login, a third-party API key, etc.) can
 have those values forwarded from your local `.env` into the launch container.
-The easiest way to set this up is the **`hula init`** prompt — the last question,
-_"Environment variables to forward to tests…"_, accepts a comma-separated list of
-names or the literal `all`. You can also list the variable **names** in `envVars`
-in `.hublaunch/hublaunch.config.js` directly:
+Configure this by listing the variable **names** in `envVars` in
+`.hublaunch/hublaunch.config.js`:
 
 ```js
 export const config = {
@@ -256,7 +292,7 @@ export const config = {
 ```
 
 To forward **every** non-reserved variable from `.env` without listing each one,
-set `envVars` to the string `"all"` (or type `all` at the init prompt):
+set `envVars` to the string `"all"`:
 
 ```js
 export const config = {
@@ -277,6 +313,72 @@ variables, and includes them in the request to the server. Notes:
   `ANTHROPIC_API_KEY`, `AWS_SECRET_ACCESS_KEY`) cannot be forwarded.
 - Only forward variables your tests actually need; treat anything you list as
   leaving your machine.
+
+### Configuring per-step model & iteration overrides
+
+`hula launch` runs your plan through a fixed 9-step server-side pipeline. By
+default every step uses the server's built-in model, loop-iteration cap, and
+skip behavior. To override those per step for your project, add a `steps` block
+to `.hublaunch/hublaunch.config.js` (config-file only — this is a persistent
+project setting, not a per-launch flag):
+
+```js
+export const config = {
+  // ...
+  steps: {
+    implementation: { model: "opus" },
+    lintfix: { model: "haiku", maxIterations: 2 },
+    regression: { skip: true },
+  },
+};
+```
+
+Each of the 9 keys maps to a pipeline step. All fields are optional; omit a step
+(or the whole `steps` block) to keep the server default:
+
+| Step key         | `model` | `maxIterations` | `skip` | Other |
+| ---------------- | :-----: | :-------------: | :----: | ----- |
+| `implementation` |   ✅    |                 |        |       |
+| `findBugs`       |   ✅    |   ✅ (1–20)     |        | `diffMaxLines` (≥1), `excludeRegex` (string) |
+| `bugfix`         |   ✅    |                 |        |       |
+| `lintfix`        |   ✅    |   ✅ (1–20)     |        |       |
+| `build`          |   ✅    |   ✅ (1–20)     |        |       |
+| `regression`     |         |                 |   ✅   |       |
+| `mergeConflict`  |   ✅    |                 |        |       |
+| `summary`        |   ✅    |   ✅ (1–20)     |        |       |
+| `verify`         |   ✅    |   ✅ (1–20)     |   ✅   |       |
+
+`model` values are free-form strings passed straight through to the server
+(`claude --model <value>`); no allowlist is enforced. Values are validated at
+config-load time — an out-of-range `maxIterations`, a non-boolean `skip`, or an
+empty `model` string fails immediately with a clear error.
+
+#### `--skip-regression`
+
+As a per-launch counterpart to the config `steps.regression.skip`, `hula launch`
+accepts a `--skip-regression` flag that force-skips the regression-tests step for
+that one invocation (it wins over whatever `steps.regression.skip` is set to in
+config):
+
+```bash
+# Skip regression tests for a single launch
+hula launch feature-auth .hublaunch/plans/my-plan.md --skip-regression
+```
+
+#### Conflict rules (validated locally before any network call)
+
+Two combinations are rejected client-side — `hula launch` exits `1` immediately
+with the same message the server would return, so misconfigurations fail fast:
+
+- **`bugfix.model` ≠ `mergeConflict.model`** — both map to the same
+  `RALPH_BUGFIX_MODEL` env var on the server, so they cannot be set to different
+  values:
+  `bugfix.model and mergeConflict.model both map to RALPH_BUGFIX_MODEL and cannot conflict`
+- **`regression.skip: true` combined with the legacy `--regression` flag** — one
+  forces the step off, the other forces it on. This also covers passing both
+  `--skip-regression` and `--regression`, and a config `steps.regression.skip:
+  true` combined with a one-off `--regression`:
+  `regression.skip and the legacy regression flag are contradictory`
 
 ## `hula schedule`
 
@@ -332,24 +434,41 @@ Defaults and requirements:
 - **Anthropic OAuth token**: an OAuth token (`sk-ant-oat…`) is required — the sandbox needs it as `CLAUDE_CODE_OAUTH_TOKEN`. It is resolved from `--anthropic-key <key>`, then `config.anthropicApiKey` in `.hublaunch/hublaunch.config.js`, then the `ANTHROPIC_API_KEY` environment variable. Get a token at [claude.ai/settings](https://claude.ai/settings) (requires a paid Claude.ai plan — Pro or Max). Standard API keys (`sk-ant-api03-…`) are not accepted.
 - **Daytona API key**: required by the server. Resolved from `--daytona-key <key>`, then `config.daytonaApiKey`, then the `DAYTONA_API_KEY` environment variable.
 
-## `hula logs`
+## `hula info`
 
-`hula logs <trackingName>` shows the live output tail for a tracked plan. Flags
-retrieve the persisted run artifacts (full run log and lessons) stored on the
-latest task instead:
+`hula info <trackingName>` surfaces facts about a tracked plan. Each flag adds a
+key to the request:
+
+| Flag                | Meaning                                                  |
+| ------------------- | -------------------------------------------------------- |
+| `--logs`            | Full stored run log                                      |
+| `--lastLogs`        | Last N lines of live output (see `--lines`)              |
+| `--diff`            | PR unified diff (fetched server-side from GitHub)        |
+| `--initial`         | Initial PR body / AI summary                             |
+| `--lessons`         | Lessons-learned content                                  |
+| `--clientSessionId` | Claude Code session id that launched the plan            |
+| `--lines <n>`       | Trailing line count for `--lastLogs` (default: 100)      |
+| `-r, --raw`         | For a single content key, print raw content to stdout    |
 
 ```bash
-hula logs my-feature                       # unchanged: live output tail (last 100 lines)
-hula logs my-feature --logs                # full stored run log (.txt content)
-hula logs my-feature --lessons             # lessons-learned content
-hula logs my-feature --all                 # lessons + full log (with section headers)
-hula logs my-feature --logs --lines 500    # last 500 lines of the full log
-hula logs my-feature --all --raw           # both, printed verbatim to stdout
+hula info my-feature --logs                 # opens the full run log in the editor
+hula info my-feature --lastLogs --lines 50   # opens the last 50 lines of live output
+hula info my-feature --diff                  # opens the PR diff
+hula info my-feature --clientSessionId       # prints the launching session id (plain)
+hula info my-feature --logs --diff           # prints a merged JSON object {logs, diff}
+hula info my-feature --logs --raw            # prints the raw run log to stdout
 ```
 
-When more than one of `--logs`/`--lessons`/`--all` is passed, precedence is
-`--all` > (`--lessons` + `--logs` → both) > single flag. Bare `hula logs <name>`
-is unchanged. See the [Commands Reference](./docs/commands.md#hula-logs) for details.
+**Output rules** (let K = number of requested keys):
+
+- **K == 1, content key** → the content is formatted, written to a temp file,
+  and opened in your editor. With `--raw` the raw content is printed to stdout.
+- **K == 1, `--clientSessionId`** → the session id (or `null`) is printed plain.
+- **K >= 2** → the keys are merged into one JSON object printed to stdout.
+
+Content keys route to `GET /api/v1/info/:planName`; `--clientSessionId` routes to
+the status endpoint. `--diff`/`--initial` can be `null` when there is no PR yet.
+See the [Commands Reference](./docs/commands.md#hula-info) for details.
 
 ## Documentation
 
