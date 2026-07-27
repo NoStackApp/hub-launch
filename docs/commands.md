@@ -13,7 +13,7 @@ Complete reference for every hula CLI command.
 | `hula merge`   | —     | Merge PR and clean up                                             |
 | `hula launch`  | —     | Trigger a launch job on hula-project server                       |
 | `hula schedule` | —     | Trigger or schedule an execute-action (e.g. `--built-in harden`) |
-| `hula logs`    | —     | View logs by request ID                                           |
+| `hula info`    | —     | View plan info (logs, diff, initial, lessons, clientSessionId)    |
 
 ## Global Options
 
@@ -230,38 +230,54 @@ Run `hula schedule --help` for the full option list.
 
 ---
 
-## `hula logs`
+## `hula info`
 
-View logs for a tracked plan.
+Surface facts about a tracked plan. Each flag adds a requested key.
 
 ```bash
-hula logs <trackingName>
+hula info <trackingName> [flags]
 ```
 
-By default this shows the live output tail (the last lines of the task's most
-recent output). The following flags retrieve the persisted run artifacts from
-the latest task instead:
+| Flag                | Description                                                    |
+| ------------------- | ------------------------------------------------------------- |
+| `--logs`            | Full stored run log                                           |
+| `--lastLogs`        | Last N lines of live output (uses `--lines`)                  |
+| `--diff`            | PR unified diff (fetched server-side from GitHub)             |
+| `--initial`         | Initial PR body / AI summary                                  |
+| `--lessons`         | Lessons-learned content                                       |
+| `--clientSessionId` | Claude Code session id that launched the plan                 |
+| `--lines <n>`       | Trailing line count for `--lastLogs` (default: 100)           |
+| `-r, --raw`         | For a single content key, print raw content to stdout         |
+| `--url <url>`       | Hula server URL (overrides config)                            |
+| `--api-key <key>`   | Hula API key (overrides config)                               |
 
-| Flag           | Description                                              |
-| -------------- | -------------------------------------------------------- |
-| `--lines <n>`  | Number of lines to show (default: 100)                   |
-| `-r, --raw`    | Print the raw output to stdout instead of opening editor |
-| `--logs`       | Show the full stored run log (`.txt` content)            |
-| `--lessons`    | Show the stored lessons-learned content                  |
-| `--all`        | Show lessons + full run log (with section headers)       |
+Content keys (`--logs`, `--lastLogs`, `--diff`, `--initial`, `--lessons`) route
+to `GET /api/v1/info/:planName`. `--clientSessionId` routes to the status
+endpoint `GET /api/v1/ralph-run/:name/status`.
 
-When more than one of `--logs`/`--lessons`/`--all` is passed, precedence is
-`--all` > (`--lessons` + `--logs` → both) > single flag.
+**Output rules** (let K = number of requested keys):
+
+- **K == 1, content key** → the content is formatted, written to a temp file,
+  and opened in your editor. With `--raw` the raw content is printed to stdout.
+- **K == 1, `--clientSessionId`** → the session id (or `null`) is printed plain.
+- **K >= 2** → the requested keys are merged into one JSON object on stdout.
+- **K == 0** → error (exit 1). Pass at least one flag.
+
+`--diff` and `--initial` can be `null` when no PR exists yet or the server's live
+GitHub read soft-failed; the client handles this without crashing.
 
 ### Examples
 
 ```bash
-hula logs my-feature                       # unchanged: live output tail (last 100 lines)
-hula logs my-feature --logs                # full stored run log (.txt content)
-hula logs my-feature --lessons             # lessons-learned content
-hula logs my-feature --all                 # lessons + full log (with section headers)
-hula logs my-feature --logs --lines 500    # last 500 lines of the full log
-hula logs my-feature --all --raw           # both, printed verbatim to stdout
+hula info my-feature --logs                 # opens the full run log in the editor
+hula info my-feature --lastLogs --lines 50   # opens the last 50 lines of live output
+hula info my-feature --diff                  # opens the PR diff
+hula info my-feature --initial               # opens the PR body / AI summary
+hula info my-feature --lessons               # opens lessons-learned content
+hula info my-feature --clientSessionId       # prints the launching session id (plain)
+hula info my-feature --logs --diff           # prints a merged JSON object {logs, diff}
+hula info my-feature --logs --clientSessionId# prints merged JSON across both endpoints
+hula info my-feature --logs --raw            # prints the raw run log to stdout
 ```
 
 ---
