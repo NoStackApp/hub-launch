@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-07-29
+
+### Added
+
+- Added `--autoLaunch` flag to `/hula-plan`.
+
+### Documentation
+
+- Documented the `envVars: "all"` forwarding option everywhere it's surfaced to users (generated config, hooks README).
+
+## [1.18.0] - 2026-07-28
+
+### Added
+
+- Verify reports now auto-post to the PR by default; use `--no-post` to restore the old confirm-before-posting behavior.
+- Added a `hula-help` Agent Skill for interactive onboarding and reference guidance.
+- Moved `hula-verify`'s tmp writes from OS `/tmp` to a repo-local, gitignored `.hublaunch/tmp/` directory (#325).
+
 ## [1.17.0] - 2026-07-23
 
 ### Added
