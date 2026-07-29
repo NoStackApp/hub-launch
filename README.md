@@ -40,6 +40,7 @@ That's the whole fundamental workflow.
 - 🖥️ **Client Agnostic** — based on skills that can be adapted to most agent harnesses
 - 🔔 **Notifications** - you can configure an endpoint for notifications about progress. For instance, a slack channel.
 - 📋 **Logging** - run `hula-info` for progress in the container. Also pushes several documents within each PR showing logging.
+- 🧭 **Guided Help** — run `/hula-help` anytime for an interactive walkthrough of setup, the workflow, and any command or skill
 - 🖥️ **Dashboard** — track all your active plans at [https://www.hublaunch.site/dashboard](https://www.hublaunch.site/dashboard)
 - 🔒 **Safe** - tokens are maintained by you locally in your config file, and on our server securely protected and removed when no longer needed.
 
@@ -104,6 +105,8 @@ The primary use case is AI-assisted issue development via the hula-project serve
 #    When validation finishes, the assistant offers to launch right away with a
 #    default issue name derived from the plan (reply "yes" to launch, or decline
 #    and run /hula-launch <name> yourself later).
+#    Add --autoLaunch (optionally with --test / --handoff <username>) to skip the
+#    post-validation confirmation and launch immediately.
 /hula-plan Add password reset support
 
 # 2. Upload the plan to origin/main
