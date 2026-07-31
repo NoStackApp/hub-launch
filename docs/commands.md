@@ -14,6 +14,9 @@ Complete reference for every hula CLI command.
 | `hula launch`  | —     | Trigger a launch job on hula-project server                       |
 | `hula schedule` | —     | Trigger or schedule an execute-action (e.g. `--built-in harden`) |
 | `hula info`    | —     | View plan info (logs, diff, initial, lessons, clientSessionId)    |
+| `hula script <name>` | — | Run a bundled cross-platform workflow script (used by the Agent Skills) |
+| `hula instructions <name>` | — | Print a bundled instruction doc (`planning`, `proceed`, `skill-creation`) |
+| `hula session-hook` | — | Claude Code PreToolUse hook that captures launch-session provenance |
 
 ## Global Options
 

@@ -1,0 +1,35 @@
+<svg viewBox="0 0 800 430" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="pac-title"
+     font-family="'Patrick Hand', 'Comic Sans MS', 'Chalkboard SE', 'Chalkboard', 'Segoe Print', cursive">
+  <title id="pac-title">The cycle: you plan, AI implements, tests and opens a PR; you approve, AI merges and ships.</title>
+
+  <style>
+    .ink { stroke: #1A1A1A; }
+    .ink-fill { fill: #1A1A1A; }
+    .ink-soft { fill: #5C5C5C; }
+    @media (prefers-color-scheme: dark) {
+      .ink { stroke: #F2F1EC; }
+      .ink-fill { fill: #F2F1EC; }
+      .ink-soft { fill: #A6A6A0; }
+    }
+  </style>
+
+  <defs>
+    <marker id="handArrow" viewBox="0 0 12 12" refX="9" refY="6" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path class="ink" d="M 2 1.5 L 10 6 L 2.5 10.5" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <!-- Top arc: PLAN → APPROVE -->
+  <path class="ink" d="M 205 160 C 290 72, 480 62, 578 142" fill="none" stroke-width="2.4" stroke-linecap="round" marker-end="url(#handArrow)"/>
+  <text class="ink-soft" x="400" y="52" text-anchor="middle" font-size="21">AI implements · tests · opens a PR</text>
+
+  <!-- Bottom arc: APPROVE → PLAN -->
+  <path class="ink" d="M 575 268 C 490 356, 290 366, 198 262" fill="none" stroke-width="2.4" stroke-linecap="round" marker-end="url(#handArrow)"/>
+  <text class="ink-soft" x="400" y="392" text-anchor="middle" font-size="21">AI merges &amp; ships — ready for your next plan</text>
+
+  <!-- PLAN -->
+  <text class="ink-fill" x="140" y="228" text-anchor="middle" font-size="52" font-weight="700" letter-spacing="3" transform="rotate(-2.5 140 228)">PLAN</text>
+
+  <!-- APPROVE -->
+  <text class="ink-fill" x="640" y="222" text-anchor="middle" font-size="52" font-weight="700" letter-spacing="3" transform="rotate(1.5 640 222)">APPROVE</text>
+</svg>
