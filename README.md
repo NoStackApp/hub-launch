@@ -40,7 +40,7 @@ right-sized plans, each independently launched, verified, and approved.
 ### 2. Approve
 
 ```text
-/hula-merge
+/hula-approve
 ```
 
 Review the verified PR and approve it. HubLaunch merges, closes the issue,
