@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.20.0] - 2026-08-04
+
+### Added
+
+- Added a one-plan-one-PR scope check to plan validation.
+- Made `/hula-plan` output clearer with a summary, folded detail section, optional diagram, and pre-save checklist.
+
+### Changed
+
+- Renamed the `hula-merge` Agent Skill to `hula-approve`, updating the CLI command, wrapper scripts, and docs.
+
+### Security
+
+- Removed client-side Daytona API key handling.
+
+### Documentation
+
+- Updated the plan/approve-first README, notifications guide, and skill descriptions.
+
 ## [1.19.0] - 2026-07-29
 
 ### Added

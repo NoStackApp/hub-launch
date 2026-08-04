@@ -1,6 +1,6 @@
 # Advanced Usage
 
-Everything here is optional — the core loop (`/hula-plan` → approve → `/hula-merge`)
+Everything here is optional — the core loop (`/hula-plan` → `/hula-approve`)
 never requires it. This page collects the deeper controls for power users, moved
 out of the README to keep the front page simple.
 
@@ -38,7 +38,7 @@ The primary use case is AI-assisted issue development via the hula-project serve
 
 # 7. Merge and clean up
 #    Equivalent to merging the PR manually on GitHub
-/hula-merge
+/hula-approve
 ```
 
 > 💡 `/hula-confirm` remains available as a standalone command for re-validating a plan you've edited by hand.
@@ -83,13 +83,13 @@ different version than the one currently installed.
 | 8    | Merge latest main                                                             |
 | 9    | Cleanup & create PR                                                           |
 
-> 💡 After a PR is merged, `hula merge` automatically fast-forwards your **local**
+> 💡 After a PR is merged, `hula approve` automatically fast-forwards your **local**
 > `main` at the project root to match `origin/main` — no manual `git pull` needed.
 > It is non-destructive (fast-forward only) and works even when run from inside a
 > worktree; it is skipped safely if local `main` can't fast-forward. When it is
-> skipped, `/hula-merge` reports the specific reason and the exact command to fix it.
+> skipped, `/hula-approve` reports the specific reason and the exact command to fix it.
 
-### Troubleshooting `/hula-merge`
+### Troubleshooting `/hula-approve`
 
 **Q: My local `main` wasn't updated after the merge.**
 
@@ -104,7 +104,7 @@ The fast-forward is best-effort and is skipped (never failing the merge) when:
 - **`git pull --ff-only` couldn't fast-forward** (e.g. diverged history or a
   network issue). Run it manually: `git pull --ff-only origin main`.
 
-`/hula-merge` prints the specific reason and remediation in its output, and its
+`/hula-approve` prints the specific reason and remediation in its output, and its
 summary shows ⚠️ when the local update was skipped.
 
 ### Resuming from a specific step
@@ -278,7 +278,7 @@ Skills invoke them via the global bin:
 
 ```bash
 # Run a bundled workflow script (cross-platform, no bash/jq)
-hula script merge-local -- 42 ".hula-worktrees/issue-42" "fix(#42): message"
+hula script approve-local -- 42 ".hula-worktrees/issue-42" "fix(#42): message"
 
 # Print a bundled instruction document
 hula instructions planning
@@ -347,7 +347,6 @@ Defaults and requirements:
 - **`--outcome-type`**: defaults to `pr`. Valid values are `pr`, `plan`, and `feedback`.
 - **GitHub login**: run `hula login` first so your GitHub token is attached to the request automatically (the server requires it). Alternatively, set the `GITHUB_TOKEN` environment variable.
 - **Anthropic OAuth token**: an OAuth token (`sk-ant-oat…`) is required — the sandbox needs it as `CLAUDE_CODE_OAUTH_TOKEN`. It is resolved from `--anthropic-key <key>`, then `config.anthropicApiKey` in `.hublaunch/hublaunch.config.js`, then the `ANTHROPIC_API_KEY` environment variable. Get a token at [claude.ai/settings](https://claude.ai/settings) (requires a paid Claude.ai plan — Pro or Max). Standard API keys (`sk-ant-api03-…`) are not accepted.
-- **Daytona API key**: required by the server. Resolved from `--daytona-key <key>`, then `config.daytonaApiKey`, then the `DAYTONA_API_KEY` environment variable.
 
 ## `hula info`
 
