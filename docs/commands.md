@@ -10,7 +10,7 @@ Complete reference for every hula CLI command.
 | `hula login`   | —     | Authenticate with GitHub + hula-project                           |
 | `hula init`    | —     | Initialize configuration                                          |
 | `hula create`  | —     | Create issue from plan file                                       |
-| `hula merge`   | —     | Merge PR and clean up                                             |
+| `hula approve` | —     | Merge PR and clean up                                             |
 | `hula launch`  | —     | Trigger a launch job on hula-project server                       |
 | `hula schedule` | —     | Trigger or schedule an execute-action (e.g. `--built-in harden`) |
 | `hula info`    | —     | View plan info (logs, diff, initial, lessons, clientSessionId)    |
@@ -47,8 +47,9 @@ hula create --no-track       # Don't add to tracking
 Initialize hula configuration.
 
 ```bash
-hula init            # Interactive setup
-hula init --force    # Overwrite existing config
+hula init                # Interactive setup (also logs you in if needed)
+hula init --force        # Overwrite existing config
+hula init --skip-login   # Configure without the automatic login flow
 ```
 
 The interactive setup prompts for all configuration, including (as the final
@@ -58,6 +59,19 @@ every non-reserved variable from your `.env`. Reserved system/internal names
 (e.g. `PATH`, `HOME`) are rejected with a clear error so you can retry without
 re-entering the other fields. Leaving the prompt empty clears the setting.
 Existing values are shown as the prompt's initial value when re-running `hula init`.
+
+The Anthropic OAuth token prompt is optional — press Enter to skip it. If you
+skip it, `hula init` prints a reminder, and `hula launch` will ask for the token
+interactively the first time you need it.
+
+**Automatic login:** when `hula init` finishes and you are not yet authenticated
+(no HubLaunch API key, or no saved GitHub token), it flows straight into the
+login flow — the same GitHub Device Flow + HubLaunch key exchange as
+`hula login` — so a single command completes onboarding. If login is cancelled
+or fails, init still exits successfully and points you to `hula login`. Pass
+`--skip-login` to configure without authenticating; when unauthenticated, it
+prints a `Run 'hula login' to authenticate.` hint instead. When you are already
+authenticated, no browser opens.
 
 ---
 
@@ -72,21 +86,21 @@ hula login --url <server-url>  # Also link to a hula-project server
 
 ---
 
-## `hula merge`
+## `hula approve`
 
 Merge a PR, delete the branch, and update tracking.
 
 ```bash
-hula merge                   # Interactive
-hula merge 123               # Merge PR for issue #123
-hula merge 123 --no-delete   # Keep branch after merge
-hula merge 123 --no-untrack  # Keep issue in tracking
+hula approve                   # Interactive
+hula approve 123               # Merge PR for issue #123
+hula approve 123 --no-delete   # Keep branch after merge
+hula approve 123 --no-untrack  # Keep issue in tracking
 ```
 
 After a successful merge, your local `main` at the project root is automatically
 fast-forwarded to match `origin/main` (skipped safely if it can't fast-forward —
 e.g. diverged local commits, uncommitted changes, or the root not on `main`).
-This works even when `hula merge` runs from inside a worktree.
+This works even when `hula approve` runs from inside a worktree.
 
 ---
 
@@ -108,6 +122,14 @@ hula launch my-issue .hublaunch/plans/my-plan.md --resume 7 --fix "address build
 ```
 
 > **Note**: `--fix` requires `--resume` and passes instructions to the AI agent for that stage.
+
+**Anthropic OAuth token:** the launch needs an `anthropicApiKey` (resolved from
+`--anthropic-key`, then `.hublaunch/hublaunch.config.js`, then `ANTHROPIC_API_KEY`).
+If none is set and you're in an interactive terminal, `hula launch` prompts you
+to paste the token once, validates the `sk-ant-oat…` prefix, saves it to
+`.hublaunch/hublaunch.config.js` (mode `0600`), and continues the launch —
+press Enter at the prompt to cancel. In a non-interactive context (piped stdin,
+CI) it fails fast with instructions instead, exactly as before.
 
 **Stop or replace an in-flight task:**
 
@@ -199,10 +221,8 @@ Either `--built-in <name>` or `--action-path <path>` is required (mutually exclu
 An Anthropic OAuth token (`sk-ant-oat…`) is required — the sandbox needs it as
 `CLAUDE_CODE_OAUTH_TOKEN` — and is resolved from `--anthropic-key`, `config.anthropicApiKey`,
 or the `ANTHROPIC_API_KEY` env var (standard `sk-ant-api03-…` keys are not accepted; get a
-token at https://claude.ai/settings, requires a paid Claude.ai plan). The Daytona API key is
-required and resolved from `--daytona-key`, `config.daytonaApiKey`, or the `DAYTONA_API_KEY`
-env var. The target project is resolved from `--project`, `config.hulaProject`, or the current
-git remote.
+token at https://claude.ai/settings, requires a paid Claude.ai plan). The target project is
+resolved from `--project`, `config.hulaProject`, or the current git remote.
 
 The server URL defaults to `https://www.hublaunch.site` (override with `--url` or the
 `HULA_PROJECT_URL` env var). Run `hula login` first so your GitHub token is attached to the
@@ -219,7 +239,6 @@ Selected options:
 | `--outcome-type <type>` | Optional | `pr`, `plan`, or `feedback` (defaults to `pr` when omitted) |
 | `--schedule <cron>` | Optional | Cron expression — creates a recurring schedule instead of a one-off run |
 | `--anthropic-key <key>` | Optional | Anthropic OAuth token for Claude Code (ephemeral, `sk-ant-oat…`) |
-| `--daytona-key <key>` | Optional | Daytona API key (required by hula-server) |
 | `--project <owner/repo>` | Optional | Override the target repository |
 | `--update-notification-name-tag <tag>` | Optional | Verbatim "initiated by" label in notifications; Slack mention markup (`<@U12345>`, `<!subteam^ID>`) pings. Falls back to `updateNotificationNameTag` config field, then `HULA_UPDATE_NOTIFICATION_NAME_TAG` env var. |
 | `--publish-skill <path>` | Optional | Commit a `.hublaunch/skills/` action file to `origin/main` via worktree (used by the `/hula-schedule` skill) |
