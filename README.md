@@ -40,7 +40,7 @@ right-sized plans, each independently launched, verified, and approved.
 ### 2. Approve
 
 ```text
-/hula-merge
+/hula-approve
 ```
 
 Review the verified PR and approve it. HubLaunch merges, closes the issue,
@@ -65,25 +65,26 @@ That's the whole loop. Everything between the two commands happens without you.
 
 ## Setup
 
-Once per machine:
-
 ```bash
-npm install -g hub-launch    # or: pnpm add -g hub-launch
-hula login                   # authenticate with GitHub + HubLaunch
-```
-
-Once per project:
-
-```bash
+npm install -g hub-launch    # once per machine (or: pnpm add -g hub-launch)
 cd <your-project>
-hula init
+hula init                    # configures the project AND logs you in
 ```
 
-`hula init` walks you through configuration interactively and installs the
-slash commands (Agent Skills) into your project, so `/hula-plan` and friends are
-available the next time you open your agent. It's safe to re-run any time —
-your keys and team settings are preserved — and you should re-run it after
-upgrading the CLI.
+`hula init` is the whole onboarding: it walks you through configuration
+interactively, installs the slash commands (Agent Skills) into your project
+(so `/hula-plan` and friends are available the next time you open your agent),
+and — when you're not already authenticated — flows straight into logging you
+in with GitHub + HubLaunch. One command, and you're ready to go. Pass
+`--skip-login` to configure without authenticating.
+
+`hula login` still exists for re-authenticating on a machine that's already
+set up; it auto-runs `hula init` if the project hasn't been initialized yet.
+Either command completes onboarding — whichever you run first, you end up fully
+set up.
+
+`hula init` is safe to re-run any time — your keys and team settings are
+preserved — and you should re-run it after upgrading the CLI.
 
 That's the only time you'll meaningfully touch the `hula` CLI: the rest of it
 exists mostly for your agent to call on your behalf.

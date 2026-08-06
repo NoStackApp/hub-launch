@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.0] - 2026-08-06
+
+### Added
+
+- Single-command onboarding: `hula init` now chains directly into login, with Anthropic token entry deferred until actually needed.
+- When login fails with `repo_not_found`, guidance is shown for installing the GitHub App.
+
+### Changed
+
+- Generated config no longer emits a default `containerResources` block.
+- Obsolete Daytona keys are scrubbed from existing config on re-init.
+
+## [1.20.0] - 2026-08-04
+
+### Added
+
+- Added a one-plan-one-PR scope check to plan validation.
+- Made `/hula-plan` output clearer with a summary, folded detail section, optional diagram, and pre-save checklist.
+
+### Changed
+
+- Renamed the `hula-merge` Agent Skill to `hula-approve`, updating the CLI command, wrapper scripts, and docs.
+
+### Security
+
+- Removed client-side Daytona API key handling.
+
+### Documentation
+
+- Updated the plan/approve-first README, notifications guide, and skill descriptions.
+
 ## [1.19.0] - 2026-07-29
 
 ### Added
