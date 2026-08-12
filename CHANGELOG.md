@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.0] - 2026-08-12
+
+### Added
+
+- Multi-repo feature groups: client-side `--folder` fan-out enables launching and checking status across a group of repositories from a single parent folder (group launch, group status).
+
+### Fixed
+
+- `--folder` group launch now works when invoked from the `/hula-launch` Agent Skill in non-TTY environments (#344).
+
 ## [1.21.0] - 2026-08-06
 
 ### Added
