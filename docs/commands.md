@@ -60,9 +60,11 @@ every non-reserved variable from your `.env`. Reserved system/internal names
 re-entering the other fields. Leaving the prompt empty clears the setting.
 Existing values are shown as the prompt's initial value when re-running `hula init`.
 
-The Anthropic OAuth token prompt is optional — press Enter to skip it. If you
-skip it, `hula init` prints a reminder, and `hula launch` will ask for the token
-interactively the first time you need it.
+`hula init` first asks which LLM provider you use — Claude, OpenAI, or
+OpenRouter — then prompts for that provider's credential. The credential prompt
+is optional; press Enter to skip it. If you skip it, `hula init` prints a
+reminder, and `hula launch` will ask for the credential interactively the first
+time you need it.
 
 **Automatic login:** when `hula init` finishes and you are not yet authenticated
 (no HubLaunch API key, or no saved GitHub token), it flows straight into the
@@ -123,13 +125,18 @@ hula launch my-issue .hublaunch/plans/my-plan.md --resume 7 --fix "address build
 
 > **Note**: `--fix` requires `--resume` and passes instructions to the AI agent for that stage.
 
-**Anthropic OAuth token:** the launch needs an `anthropicApiKey` (resolved from
-`--anthropic-key`, then `.hublaunch/hublaunch.config.js`, then `ANTHROPIC_API_KEY`).
-If none is set and you're in an interactive terminal, `hula launch` prompts you
-to paste the token once, validates the `sk-ant-oat…` prefix, saves it to
+**LLM provider credential:** the launch needs a provider (`claude` (default),
+`openai`, or `openrouter`) and its credential. The provider type is resolved
+from `--provider <type>`, then `config.provider.type`, then the default
+`claude`; the credential from `--provider-key <key>`, then
+`config.provider.apiKey`, then `PROVIDER_AUTH_TOKEN`. If none is set and you're
+in an interactive terminal, `hula launch` prompts you to paste the credential
+once, validates its format for the selected provider, saves it to
 `.hublaunch/hublaunch.config.js` (mode `0600`), and continues the launch —
 press Enter at the prompt to cancel. In a non-interactive context (piped stdin,
-CI) it fails fast with instructions instead, exactly as before.
+CI) it fails fast with instructions instead. (The old `--anthropic-key` flag,
+`anthropicApiKey` config key, and `ANTHROPIC_API_KEY` env fallback have been
+removed.)
 
 **Stop or replace an in-flight task:**
 
@@ -151,6 +158,8 @@ Selected options:
 | --- | --- |
 | `--resume <step>` | Re-run from this pipeline step (1–9), skipping earlier steps |
 | `--fix <instructions>` | Pass fix instructions to the AI agent (requires `--resume`) |
+| `--provider <type>` | LLM provider: `claude` \| `openai` \| `openrouter` (default: config or `claude`) |
+| `--provider-key <key>` | Provider credential (ephemeral; never stored server-side beyond the run) |
 | `--kill` | Stop the in-flight task for this tracking name without relaunching. Needs only the branch name (no plan path); sends no credentials. |
 | `--kill-and-relaunch` | Cancel the in-flight task, reset stale state, and launch a fresh task. Requires a plan path, like a normal launch. |
 | `--test` | Run in test mode: the server runs the full production pipeline but swaps the real Claude CLI for a mock (fast E2E run). **A real GitHub PR is still created** — clean it up afterward. Requires Pro tier and valid credentials, exactly like a normal launch. |
@@ -218,11 +227,13 @@ hula schedule --delete-skill .hublaunch/skills/2026-06-19-16:35-remove-unreachab
 > traversal. You normally invoke them through the skill rather than directly.
 
 Either `--built-in <name>` or `--action-path <path>` is required (mutually exclusive).
-An Anthropic OAuth token (`sk-ant-oat…`) is required — the sandbox needs it as
-`CLAUDE_CODE_OAUTH_TOKEN` — and is resolved from `--anthropic-key`, `config.anthropicApiKey`,
-or the `ANTHROPIC_API_KEY` env var (standard `sk-ant-api03-…` keys are not accepted; get a
-token at https://claude.ai/settings, requires a paid Claude.ai plan). The target project is
-resolved from `--project`, `config.hulaProject`, or the current git remote.
+An LLM provider credential is required. Select the provider (`claude` (default),
+`openai`, or `openrouter`) from `--provider`, then `config.provider.type`; and the
+credential from `--provider-key`, then `config.provider.apiKey`, then the
+`PROVIDER_AUTH_TOKEN` env var — which must match the provider selected in config.
+For `claude`, both subscription OAuth tokens (`sk-ant-oat…`) and API keys
+(`sk-ant-api…`) are accepted. The target project is resolved from `--project`,
+`config.hulaProject`, or the current git remote.
 
 The server URL defaults to `https://www.hublaunch.site` (override with `--url` or the
 `HULA_PROJECT_URL` env var). Run `hula login` first so your GitHub token is attached to the
@@ -238,7 +249,8 @@ Selected options:
 | `--entry-point <path>` | Optional | Entry point for the action (file, directory, or URL) |
 | `--outcome-type <type>` | Optional | `pr`, `plan`, or `feedback` (defaults to `pr` when omitted) |
 | `--schedule <cron>` | Optional | Cron expression — creates a recurring schedule instead of a one-off run |
-| `--anthropic-key <key>` | Optional | Anthropic OAuth token for Claude Code (ephemeral, `sk-ant-oat…`) |
+| `--provider <type>` | Optional | LLM provider: `claude` \| `openai` \| `openrouter` (default: config or `claude`) |
+| `--provider-key <key>` | Optional | Provider credential (ephemeral; never stored server-side beyond the run) |
 | `--project <owner/repo>` | Optional | Override the target repository |
 | `--update-notification-name-tag <tag>` | Optional | Verbatim "initiated by" label in notifications; Slack mention markup (`<@U12345>`, `<!subteam^ID>`) pings. Falls back to `updateNotificationNameTag` config field, then `HULA_UPDATE_NOTIFICATION_NAME_TAG` env var. |
 | `--publish-skill <path>` | Optional | Commit a `.hublaunch/skills/` action file to `origin/main` via worktree (used by the `/hula-schedule` skill) |

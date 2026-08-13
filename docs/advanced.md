@@ -196,9 +196,74 @@ variables, and includes them in the request to the server. Notes:
 - **Validated early** — if a listed variable is missing from `.env`, or the `.env`
   file is absent, `hula launch` fails before submitting the job.
 - **Reserved names blocked** — system/internal variables (e.g. `PATH`, `HOME`,
-  `ANTHROPIC_API_KEY`, `AWS_SECRET_ACCESS_KEY`) cannot be forwarded.
+  `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `CODEX_API_KEY`,
+  `PROVIDER_AUTH_TOKEN`, `AWS_SECRET_ACCESS_KEY`) cannot be forwarded.
 - Only forward variables your tests actually need; treat anything you list as
   leaving your machine.
+
+## Choosing your LLM provider
+
+HubLaunch supports three LLM providers, each with its own native agent harness:
+
+| Provider   | Harness | Key Format | Where to Get |
+|---|---|---|---|
+| `claude` | Claude Code | `sk-ant-oat01-…` (OAuth) or `sk-ant-api03-…` (API key) | [claude.ai/settings](https://claude.ai/settings) or [platform.claude.com](https://platform.claude.com) |
+| `openai` | OpenAI Codex CLI | `sk-…` or `sk-proj-…` | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| `openrouter` | OpenAI Codex CLI (via OpenRouter gateway) | `sk-or-…` | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) — one key, 400+ models |
+
+### How to switch providers
+
+**During setup** (`hula init`):
+```bash
+hula init
+# Prompted: "Choose your LLM provider"
+# Select one of the three options, then provide that provider's credential
+```
+
+**After setup** — change config in `.hublaunch/hublaunch.config.js`:
+```js
+export const config = {
+  // ...
+  provider: {
+    type: "openai",           // or "claude" or "openrouter"
+    apiKey: "sk-…",           // required key format per provider above
+  },
+};
+```
+
+Or pass flags to `hula launch`:
+```bash
+hula launch my-branch .hublaunch/plans/my-plan.md --provider openrouter --provider-key sk-or-v1-…
+```
+
+Or use environment variable (supports all three providers):
+```bash
+export PROVIDER_AUTH_TOKEN=sk-or-v1-…
+hula launch my-branch .hublaunch/plans/my-plan.md --provider openrouter
+```
+
+### Provider precedence
+
+When launching, the provider type is resolved in this order (first match wins):
+1. `--provider <type>` flag
+2. `config.provider.type` in `.hublaunch/hublaunch.config.js`
+3. Default: `claude`
+
+The credential is resolved in this order:
+1. `--provider-key <key>` flag
+2. `config.provider.apiKey` in config
+3. `PROVIDER_AUTH_TOKEN` environment variable
+
+### Per-provider model defaults
+
+When you omit a step's `model` override (see next section), the server uses a per-provider default:
+
+| Step tier | `claude` | `openai` | `openrouter` |
+| --- | --- | --- | --- |
+| implementation, bugfix, mergeConflict | `opus` | `gpt-5.6-sol` | `openrouter/auto` |
+| findBugs review, lintfix, build, summary, verify | `sonnet` | `gpt-5.6-terra` | `openrouter/auto` |
+
+> **Note:** All pipeline steps in a single launch use the same global provider. Per-step provider selection (e.g., Claude for implementation, OpenAI for testing) is planned for a future release.
 
 ## Configuring per-step model & iteration overrides
 
@@ -234,10 +299,15 @@ Each of the 9 keys maps to a pipeline step. All fields are optional; omit a step
 | `summary`        |   ✅    |   ✅ (1–20)     |        |       |
 | `verify`         |   ✅    |   ✅ (1–20)     |   ✅   |       |
 
-`model` values are free-form strings passed straight through to the server
-(`claude --model <value>`); no allowlist is enforced. Values are validated at
-config-load time — an out-of-range `maxIterations`, a non-boolean `skip`, or an
-empty `model` string fails immediately with a clear error.
+`model` values are free-form strings passed straight through to the server and
+interpreted by the selected provider's harness (`claude --model <value>` for
+`claude`; `codex --model <value>` for `openai`/`openrouter`); no allowlist is
+enforced. Values are validated at config-load time — an out-of-range
+`maxIterations`, a non-boolean `skip`, or an empty `model` string fails
+immediately with a clear error.
+
+When you omit a step's `model`, the server applies its per-provider default for
+that step's tier (see [per-provider model defaults](./advanced.md#per-provider-model-defaults) above).
 
 ### `--skip-regression`
 
@@ -346,7 +416,24 @@ Defaults and requirements:
 - **Server URL**: defaults to `https://www.hublaunch.site`. Override with `--url <url>` or the `HULA_PROJECT_URL` environment variable.
 - **`--outcome-type`**: defaults to `pr`. Valid values are `pr`, `plan`, and `feedback`.
 - **GitHub login**: run `hula login` first so your GitHub token is attached to the request automatically (the server requires it). Alternatively, set the `GITHUB_TOKEN` environment variable.
-- **Anthropic OAuth token**: an OAuth token (`sk-ant-oat…`) is required — the sandbox needs it as `CLAUDE_CODE_OAUTH_TOKEN`. It is resolved from `--anthropic-key <key>`, then `config.anthropicApiKey` in `.hublaunch/hublaunch.config.js`, then the `ANTHROPIC_API_KEY` environment variable. Get a token at [claude.ai/settings](https://claude.ai/settings) (requires a paid Claude.ai plan — Pro or Max). Standard API keys (`sk-ant-api03-…`) are not accepted.
+- **LLM provider credential**: HubLaunch supports three providers — `claude` (default), `openai`, and `openrouter` — each running on its own native agent harness server-side (Claude Code for `claude`; the OpenAI Codex CLI for `openai`/`openrouter`). Select one via `--provider <type>`, then `config.provider.type` in `.hublaunch/hublaunch.config.js`, then the default `claude`. Supply its credential via `--provider-key <key>`, then `config.provider.apiKey`, then the `PROVIDER_AUTH_TOKEN` environment variable. Per-provider key formats:
+  - `claude` — a subscription OAuth token (`sk-ant-oat01-…`, from [claude.ai/settings](https://claude.ai/settings), requires Claude Pro or Max) **or** an Anthropic API key (`sk-ant-api03-…`, from [platform.claude.com](https://platform.claude.com)). Both are accepted.
+  - `openai` — an OpenAI API key (create one at [platform.openai.com/api-keys](https://platform.openai.com/api-keys)).
+  - `openrouter` — a key starting with `sk-or-` (create one at [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys)); one key, 400+ models.
+
+  Configure it in `.hublaunch/hublaunch.config.js`:
+
+  ```js
+  export const config = {
+    // ...
+    provider: {
+      type: "openrouter",        // "claude" (default) | "openai" | "openrouter"
+      apiKey: "sk-or-v1-…",      // optional here; can come from --provider-key or PROVIDER_AUTH_TOKEN
+    },
+  };
+  ```
+
+  > **Breaking change:** the old `anthropicApiKey` config key, `--anthropic-key` flag, and `ANTHROPIC_API_KEY` env fallback have been removed. Use the `provider` block above. A leftover `anthropicApiKey` in your config produces an explicit migration error.
 
 ## `hula info`
 

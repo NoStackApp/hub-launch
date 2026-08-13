@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Multi-provider LLM support: choose `claude` (default), `openai`, or `openrouter` per launch. Select a provider with `--provider <type>` (or `config.provider.type`) and supply its credential with `--provider-key <key>` (or `config.provider.apiKey`, or the `PROVIDER_AUTH_TOKEN` env var). `hula init` now prompts for the provider first, then its credential. Client-side live validation runs against the selected provider's API before launch.
+- `claude` now accepts Anthropic API keys (`sk-ant-api03-…`) in addition to subscription OAuth tokens (`sk-ant-oat01-…`).
+
+### Changed
+
+- **BREAKING:** the `anthropicApiKey` config key, the `--anthropic-key` flag, and the `ANTHROPIC_API_KEY` env fallback have been replaced by the `provider` config block, `--provider`/`--provider-key` flags, and the `PROVIDER_AUTH_TOKEN` env var. Request bodies now send `provider: { type, authToken }` instead of `anthropicApiKey`. A leftover `anthropicApiKey` in config produces an explicit migration error. Requires hula-server with matching multi-provider support.
+
+## [1.22.0] - 2026-08-12
+
+### Added
+
+- Multi-repo feature groups: client-side `--folder` fan-out enables launching and checking status across a group of repositories from a single parent folder (group launch, group status).
+
+### Fixed
+
+- `--folder` group launch now works when invoked from the `/hula-launch` Agent Skill in non-TTY environments (#344).
+
 ## [1.21.0] - 2026-08-06
 
 ### Added
