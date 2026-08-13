@@ -90,7 +90,11 @@ That's the only time you'll meaningfully touch the `hula` CLI: the rest of it
 exists mostly for your agent to call on your behalf.
 
 **Requirements:** Node.js ≥ 18, the GitHub CLI (`gh`) authenticated via
-`gh auth login`, and a Claude subscription (Pro or Max) for the sandbox agent.
+`gh auth login`, and an LLM provider credential for the sandbox agent — bring
+your own model: Claude (subscription Pro/Max or an Anthropic API key), OpenAI, or
+400+ models via OpenRouter. Pick one during `hula init`. See
+[Choosing your LLM provider](./docs/advanced.md#choosing-your-llm-provider) for
+details on all three options and how to switch between them.
 
 ## Notifications
 
@@ -130,6 +134,60 @@ they're there when you want them:
 Full details: [Commands Reference](./docs/commands.md) ·
 [Advanced Usage](./docs/advanced.md) (launch pipeline internals, resume,
 test mode, env forwarding, scheduling).
+
+## Multi-repo feature groups
+
+A feature that spans several repositories — say a mobile app plus its backend
+API — can be launched as **one correlated group** instead of unrelated jobs you
+track by memory. Keep the repos as sibling checkouts under one parent folder,
+each already `hula init`'d and `hula login`'d with its own project-scoped API
+key:
+
+```
+~/code/myapp/
+  ├── mobile/   (.git + .hublaunch)
+  └── api/      (.git + .hublaunch)
+```
+
+Then launch the whole group with one command:
+
+```bash
+# Launch the plan in every initialized repo under ~/code/myapp as one group.
+# The CLI resolves each repo's newest plan matching the issue name, shows a
+# roster, asks once to confirm, then launches each repo with its OWN key plus a
+# shared generated groupId (e.g. login-a3f9c1).
+hula launch login --folder ~/code/myapp
+
+# Override the auto-resolved plan for one repo (repeatable, path is repo-relative)
+hula launch login --folder ~/code/myapp --plan api=.hublaunch/plans/2026-08-10-11:00-login-api.md
+
+# Retry a failed member into the SAME group (idempotent per member)
+hula launch login --folder ~/code/myapp --group-id login-a3f9c1
+
+# Combined group status — run inside any member repo, or pass the id explicitly
+hula launch --show-group login-a3f9c1
+
+# Stop every member's in-flight task
+hula launch login --folder ~/code/myapp --kill
+```
+
+| Flag                    | What it does                                                                                       |
+| ----------------------- | -------------------------------------------------------------------------------------------------- |
+| `--folder <path>`       | Launch the plan in every initialized repo **directly under** `<path>` as one feature group          |
+| `--group-id <id>`       | Use/join an explicit group id instead of generating one (`^[A-Za-z0-9_-]{1,64}$`)                   |
+| `--plan <repo>=<path>`  | Override the auto-resolved plan for one repo (repeatable; `<path>` is relative to that repo's root)  |
+| `--show-group [id]`     | Show combined per-repo status; the id is optional inside a member repo (uses the latest local record)|
+
+> ⚠️ **`hula launch --folder` is NOT the same as `/hula-plan --folder`.** For
+> `launch`, `--folder` is the **parent folder that contains your repos**. For
+> `/hula-plan`, `--folder` names a **plans subdirectory** inside a single repo.
+> The two flags share a name but mean different things — never conflate them.
+
+Each grouped launch is an ordinary single-repo job (billed and gated
+individually) that simply carries a shared `groupId`. Grouping and
+`--show-group` require a **hula-server with feature-group support**; against an
+older server launches still succeed but stay ungrouped and `--show-group`
+returns a not-found message.
 
 ## Demo
 
