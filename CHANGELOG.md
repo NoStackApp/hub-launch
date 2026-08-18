@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.24.0] - 2026-08-18
+
+### Fixed
+
+- Entitlement is now verified with the server on every launch instead of being cached indefinitely in local config. A cancelled subscription, an expired free trial, or exhausted PR credits no longer slips past the local gate only to fail later against the server. `usageTier` is now treated as a refreshable cache of the last server answer, consulted only when the server is unreachable.
+- Access-denied messages now reflect the account's actual subscription status — never subscribed (offers the free trial), cancelled, payment failed, or the server's status verbatim — instead of always claiming the user is on the free tier.
+- Billing and upgrade links point at the configured server's own dashboard rather than a hardcoded hublaunch.site, so preview and self-hosted deployments send users to their own billing page.
+- Chained hula skills (`/hula-plan` → confirm → launch) now execute inline explicitly, fixing the "blocked by disable-model-invocation" break under newer Claude Code versions that enforce that flag on model-initiated Skill-tool calls.
+
+### Changed
+
+- Prefer the server's own 402 response message and its `upgradeUrl` / `buyCreditsUrl` over anything the CLI infers, in both the single-repo and `--folder` launch paths.
+
 ## [1.23.0] - 2026-08-13
 
 ### Added
