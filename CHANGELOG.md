@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.25.0] - 2026-08-23
+
+### Added
+
+- New `hula error-watcher` command to manage production **Error Watchers** — inbound error webhooks that deduplicate reported errors and auto-launch a fix (PR, plan, or feedback run). Seven modes: `--create`, `--list`, `--show`, `--events`, `--update`, `--delete`, and `--print-setup`. `--create` and `--print-setup` print the steps to mint a project ingest key, a paste-ready `.env` block, and a hard-coded signed-request snippet that signs the exact `` `${timestamp}.${body}` `` payload the server verifies. Credentials resolve flags → `.hublaunch/hublaunch.config.js` → env, identical to `hula schedule`, and are never written to any file. `--events` shows each error's disposition (`deduped`, `skipped_environment`, `skipped_budget`, `skipped_credits`, `skipped_open_pr`, `launched`, `failed`) so "why was there no PR?" is answerable from the terminal; with no watcher id it covers every watcher on the project. Requires a hula-server with Error Watcher support; older servers return a clear "not supported yet" message. See [docs/error-watcher.md](./docs/error-watcher.md).
+- `--instructions`, `--error-env KEY=VALUE`, and `--secret <literal>` flags on `--create`/`--update` for the three watcher fields that shape what the fix agent sees: trusted guidance rendered into the agent's brief, environment variables injected into the fix sandbox, and extra literal values redacted from every payload. Each replaces the stored value wholesale, with matching `--clear-instructions` / `--clear-error-env` / `--clear-secrets` flags. Values are write-only — the server never echoes them back, and the CLI never prints them.
+- Optional `errorWebhookUrl` config key to override the Error Watcher ingest URL for self-hosted servers whose webhook host differs from `hulaProjectUrl`.
+
+### Changed
+
+- **Error Watcher ingest now authenticates on a project ingest key.** Matching the server, the credential a reporting app presents moved from the per-watcher `hew_` token to a project-level `hik_` key signing with its own `his_` secret. The generated `.env` block emits `HULA_INGEST_KEY` / `HULA_INGEST_SECRET` (was `HULA_ERROR_WATCHER_TOKEN` / `HULA_ERROR_WATCHER_SECRET`) and the snippet sends `X-Hula-Api-Key` (was `X-Hula-Watcher`). The watcher now holds configuration only; `--create` prints no credential of its own and instead directs you to **Projects → gear icon → Error reporting API keys**, the only place a key can be minted. **Any reporter wired up against an earlier build of this command must be updated or it will 401.**
+- The printed snippet now sends `errorName` and `errorCode` alongside `key`. The server's dedupe fingerprint is built from those three identity fields and nothing else, so a report carrying none of them shares a single bucket with every other such report — one fix per watcher per dedupe window.
+- `--events` with no watcher id lists the project's watchers and queries each one, merging the results newest-first. It previously requested a project-wide events route that does not exist on the server and always returned 404.
+- `--update` now rejects `--container-cpu`, `--container-memory`, `--container-disk`, `--update-notification-url`, and `--update-notification-name-tag` up front. The update endpoint ignores those fields, so sending them reported success while changing nothing; they remain settable at `--create`.
+- `--delete` no longer claims reports will start returning 401. Deleting a watcher revokes no credential — ingest keys keep authenticating, and the webhook answers 409 once the project has no enabled watcher left.
+- `--show` displays the watcher's `instructions` and no longer prints the vestigial watcher token prefix.
+- A `409` from the ingest webhook now maps to a specific message naming the cause ("no enabled error watcher is configured for this project") and the commands that fix it, instead of falling through to a generic status line.
+
+### Removed
+
+- `hula error-watcher --rotate`. It rotated the watcher's signing secret, which the ingest webhook no longer verifies, and its response handling did not match the server's shape. The signing secret that matters belongs to the project ingest key and is rotated from the dashboard settings page, which has no REST route for the CLI to call.
+
+## [1.24.0] - 2026-08-18
+
+### Fixed
+
+- Entitlement is now verified with the server on every launch instead of being cached indefinitely in local config. A cancelled subscription, an expired free trial, or exhausted PR credits no longer slips past the local gate only to fail later against the server. `usageTier` is now treated as a refreshable cache of the last server answer, consulted only when the server is unreachable.
+- Access-denied messages now reflect the account's actual subscription status — never subscribed (offers the free trial), cancelled, payment failed, or the server's status verbatim — instead of always claiming the user is on the free tier.
+- Billing and upgrade links point at the configured server's own dashboard rather than a hardcoded hublaunch.site, so preview and self-hosted deployments send users to their own billing page.
+- Chained hula skills (`/hula-plan` → confirm → launch) now execute inline explicitly, fixing the "blocked by disable-model-invocation" break under newer Claude Code versions that enforce that flag on model-initiated Skill-tool calls.
+
+### Changed
+
+- Prefer the server's own 402 response message and its `upgradeUrl` / `buyCreditsUrl` over anything the CLI infers, in both the single-repo and `--folder` launch paths.
+
 ## [1.23.0] - 2026-08-13
 
 ### Added
