@@ -13,6 +13,7 @@ Complete reference for every hula CLI command.
 | `hula approve` | —     | Merge PR and clean up                                             |
 | `hula launch`  | —     | Trigger a launch job on hula-project server                       |
 | `hula schedule` | —     | Trigger or schedule an execute-action (e.g. `--built-in harden`) |
+| `hula error-watcher` | — | Manage production Error Watchers (inbound error webhooks that auto-launch fix PRs) |
 | `hula info`    | —     | View plan info (logs, diff, initial, lessons, clientSessionId)    |
 | `hula script <name>` | — | Run a bundled cross-platform workflow script (used by the Agent Skills) |
 | `hula instructions <name>` | — | Print a bundled instruction doc (`planning`, `proceed`, `skill-creation`) |
@@ -316,6 +317,47 @@ hula info my-feature --logs --raw            # prints the raw run log to stdout
 
 ---
 
+## `hula error-watcher`
+
+Manage production **Error Watchers** — inbound error webhooks that deduplicate
+reported errors and auto-launch a fix. Thin REST client over
+`/api/v1/error-watchers`; one mode flag per invocation. Full reference:
+[Error Watchers](error-watcher.md).
+
+```bash
+hula error-watcher --create --name api-prod
+hula error-watcher --events
+hula error-watcher --update <id> --instructions "Never touch billing/"
+hula error-watcher --print-setup
+```
+
+| Flag                     | Description                                                       |
+| ------------------------ | ---------------------------------------------------------------- |
+| `--create`               | Create a watcher; print the setup steps, `.env`, and snippet      |
+| `--list`                 | List the project's watchers                                       |
+| `--show <id>`            | Show one watcher's configuration                                 |
+| `--events [id]`          | Recent error events with status/skipReason (all watchers if no id) |
+| `--update <id>`          | Patch tuning fields (only supplied fields are sent)              |
+| `--delete <id>`          | Soft-delete (interactive confirm unless `--yes`)                |
+| `--print-setup [id]`     | Re-print `.env` + snippet with placeholders (offline-safe)      |
+| `--json`                 | Emit raw server JSON for read modes                              |
+
+Watcher tuning also covers the three agent-facing fields: `--instructions`
+(trusted guidance for the fix agent), `--error-env KEY=VALUE` (env vars for the
+fix sandbox), and `--secret <literal>` (extra redaction values). Each is
+repeatable where it makes sense and **replaces** the stored value wholesale; the
+matching `--clear-*` flags remove it.
+
+The watcher holds configuration only. The credential your app presents is a
+separate **project ingest key** (`hik_…` + `his_…`), created in the dashboard
+under **Projects → gear icon → Error reporting API keys** — there is no REST
+route for it, so the CLI points you there rather than minting one (and therefore
+has no `--rotate`). Credentials resolve flags → `.hublaunch/hublaunch.config.js`
+→ env, exactly like `hula schedule`, and are never written to any file.
+
+---
+
 ## Related
 
 - [Getting Started](getting-started.md) — install, configure, and create your first issue
+- [Error Watchers](error-watcher.md) — full Error Watcher command reference and troubleshooting

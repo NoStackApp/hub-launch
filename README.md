@@ -128,12 +128,71 @@ they're there when you want them:
 | `/hula-confirm`  | Re-validate a plan you've edited by hand                                             |
 | `/hula-upload`   | Sync a plan to `origin/main` (normally automatic during launch)                      |
 | `/hula-schedule` | Run or schedule autonomous actions (e.g. a nightly `harden` security audit)          |
+| `hula error-watcher` | Manage production Error Watchers — inbound error webhooks that auto-launch fix PRs |
 | `/hula-help`     | Interactive onboarding and reference — walks through setup, the workflow, or any command/skill |
 | `/hula-create`   | Legacy: create an issue without launching (the modern flow is `/hula-plan` → launch) |
 
 Full details: [Commands Reference](./docs/commands.md) ·
 [Advanced Usage](./docs/advanced.md) (launch pipeline internals, resume,
 test mode, env forwarding, scheduling).
+
+## Error Watchers
+
+An **Error Watcher** is an inbound webhook: your production app reports an error
+to HubLaunch, HubLaunch deduplicates it, and — when the error is new — auto-launches
+a fix (a PR, a plan, or a feedback run). Manage watchers from the CLI:
+
+Reporting an error needs **two** pieces, created in different places:
+
+- the **watcher** — the configuration (dedupe window, environments, PR policy,
+  agent instructions), managed from the CLI;
+- a **project ingest key** — the credential your app presents (`hik_…` plus its
+  own signing secret `his_…`), created in the dashboard under **Projects → gear
+  icon → Error reporting API keys**.
+
+```bash
+# Create a watcher; prints where to mint the ingest key, a .env block, and a
+# ready-to-paste signed-request snippet.
+hula error-watcher --create --name api-prod
+
+# See what your watchers have been doing, and why each error did or didn't
+# launch a fix (omit the id to cover every watcher on the project)
+hula error-watcher --events
+
+# List, inspect, patch tuning, or delete
+hula error-watcher --list
+hula error-watcher --show <watcherId>
+hula error-watcher --update <watcherId> --max-fixes-per-day 10
+hula error-watcher --update <watcherId> --instructions "Never touch billing/"
+hula error-watcher --delete <watcherId>
+
+# Re-print the setup snippet at any time (placeholders only — no secrets, works offline)
+hula error-watcher --print-setup
+```
+
+Add the printed block to your production environment, filling in the key and
+secret from the dashboard:
+
+```bash
+HULA_ERROR_WEBHOOK_URL=https://www.hublaunch.site/api/v1/webhooks/error
+HULA_INGEST_KEY=hik_…
+HULA_INGEST_SECRET=his_…
+```
+
+The **key and secret are shown only once** and are never handled by the CLI —
+copy them into your deployment's secret store immediately. Every report is signed
+with `HMAC-SHA256` over `` `${timestamp}.${body}` `` (the exact payload the printed
+snippet produces) and sent as `X-Hula-Api-Key` + `X-Hula-Signature`. Rotate the
+secret from the same settings page; the previous one keeps verifying for 24 hours.
+
+Send at least a `key`, `errorName`, or `errorCode` with every report — the dedupe
+fingerprint is built from those three fields alone, and a report carrying none of
+them shares one bucket with every other such report.
+
+A `409` means the key is valid but the project has no enabled watcher; create one
+with `--create`. Requires a hula-server with Error Watcher support; older servers
+return a clear "not supported yet" message. Full reference:
+[docs/error-watcher.md](./docs/error-watcher.md).
 
 ## Multi-repo feature groups
 
