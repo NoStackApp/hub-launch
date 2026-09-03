@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.26.0] - 2026-09-03
+
+### Added
+
+- `beforeLaunch` and `afterMerge` project hooks. `beforeLaunch` runs before `hula launch` sends its request, letting a project hook provision per-launch resources (e.g. an isolated database branch) and inject the resulting environment variables into the launch — a hook failure aborts the launch rather than proceeding against the wrong resources. `afterMerge` runs after `hula approve` successfully merges a PR, for best-effort cleanup of whatever `beforeLaunch` provisioned. `hula init` now scaffolds commented-out placeholders for both in generated configs.
+
+### Changed
+
+- Removed the `deploymentStartup` hook and its Clerk/Auth0 preview-auto-login scaffold — unrelated to the new lifecycle hooks and superseded by `hula preview`'s built-in auto-login fallback.
+
+### Fixed
+
+- Hook execution no longer runs through a shell on POSIX systems, so shell metacharacters in a hook's context (e.g. backticks in a PR title) can no longer be reinterpreted instead of passed through as literal text.
+
 ## [1.25.0] - 2026-08-23
 
 ### Added
