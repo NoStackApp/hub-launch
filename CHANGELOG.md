@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.27.0] - 2026-09-04
+
+### Changed
+
+- `hula init` now scaffolds working `.hublaunch/hooks/beforeLaunch.ts` and `afterMerge.ts` files (a local-only active example plus commented-out Slack and Neon+Vercel database-branch ideas) instead of only a README, and wires both into the generated config as real (uncommented) lines by default — superseding `1.26.0`'s commented-out-placeholder behavior. A project that already has `hooks.beforeLaunch`/`hooks.afterMerge` configured is unaffected; a project with neither configured will now run these (side-effect-free) hooks automatically after upgrading and re-running `hula init`. Note that if a `beforeLaunch.ts`/`afterMerge.ts` file already exists at the default path (even one hand-written before this change), init leaves it in place but still wires the config key to that path when the key was never configured, so a previously-inert file at that path becomes active.
+
+### Fixed
+
+- Pinned `core-js` via `overrides`/`pnpm.overrides` to `^3.23.3` (the first non-deprecated release per npm's own deprecation notice) to prevent the `deprecated subdependencies found: core-js@2.6.12` warning some users saw on `pnpm i -g hub-launch`.
+
+## [1.26.0] - 2026-09-03
+
+### Added
+
+- `beforeLaunch` and `afterMerge` project hooks. `beforeLaunch` runs before `hula launch` sends its request, letting a project hook provision per-launch resources (e.g. an isolated database branch) and inject the resulting environment variables into the launch — a hook failure aborts the launch rather than proceeding against the wrong resources. `afterMerge` runs after `hula approve` successfully merges a PR, for best-effort cleanup of whatever `beforeLaunch` provisioned. `hula init` now scaffolds commented-out placeholders for both in generated configs.
+
+### Changed
+
+- Removed the `deploymentStartup` hook and its Clerk/Auth0 preview-auto-login scaffold — unrelated to the new lifecycle hooks and superseded by `hula preview`'s built-in auto-login fallback.
+
+### Fixed
+
+- Hook execution no longer runs through a shell on POSIX systems, so shell metacharacters in a hook's context (e.g. backticks in a PR title) can no longer be reinterpreted instead of passed through as literal text.
+
 ## [1.25.0] - 2026-08-23
 
 ### Added
