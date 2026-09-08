@@ -18,11 +18,13 @@ The primary use case is AI-assisted issue development via the hula-project serve
 #    post-validation confirmation and launch immediately.
 /hula-plan Add password reset support
 
-# 2. Upload the plan to origin/main
-#    (Optional — /hula-launch runs this automatically if skipped)
-#    The upload auto-retries (fetch + rebase, up to 3 attempts) if origin/main
-#    advances mid-push; a genuine conflict fails fast with a clear message.
-/hula-upload
+# 2. Publish the plan to its feature branch
+#    (Optional — /hula-plan does this at plan time and /hula-launch re-runs it
+#    automatically, creating the branch from main if needed and refreshing the
+#    plan after validation edits.)
+#    The push auto-retries (fetch + rebase, up to 3 attempts) if the target
+#    branch advances mid-push; a genuine conflict fails fast with a clear message.
+hula upload --branch password-reset-support
 
 # 3. Launch — creates the issue and starts the AI coding session
 #    Includes /hula-upload automatically, so step 2 can be omitted
