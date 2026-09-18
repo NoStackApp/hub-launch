@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.30.0] - 2026-09-18
+
+### Fixed
+
+- `hula schedule` now forwards `config.envVars` (an array of names, or `"all"`) from the project's local `.env` into the container, reaching parity with `hula launch`. Previously `schedule` never read `config.envVars`, so one-off execute-action runs and recurring cron `Schedule`s always ran with an empty environment — silently, with no error — leaving custom action skills without the secrets (Vercel tokens, test-login credentials, Slack webhooks) they declared. Values are read from `.env` at request time, validated against the reserved blocklist, and never printed (only a count is logged). Because the server persists `envVars` into a schedule's `execParams`, every future cron tick and `--run-now` dispatch picks it up automatically. Existing schedules can't be updated in place — cancel and recreate with `--schedule` to change their env vars (`hula schedule --cancel-schedule` now points this out).
+
+## [1.29.0] - 2026-09-18
+
+### Added
+
+- `/hula-research` Agent Skill — research a codebase (or a specific topic within it) and get a digestible, code-grounded R&D report. Scaffolded by `hula init` and installed globally on `hula` install, the same way as the other Agent Skills.
+- `--tracking-name` flag for `hula schedule`, giving scheduled runs a human-readable name (e.g. in Slack notifications) instead of an auto-generated `execute-action-<timestamp>` label.
+
+## [1.28.0] - 2026-09-08
+
+### Added
+
+- The feature branch for a plan is now created at plan time (`/hula-plan` runs `hula upload <planPath> --branch <issueName>`) instead of late in the sandbox run, so pre-launch infrastructure like a `beforeLaunch` hook that provisions branch-scoped resources (e.g. a Vercel Preview env var scoped to a per-branch database) can reference a git branch that already exists. `hula launch` now runs `ensurePlanBranch` as a safety net before the `beforeLaunch` hook — creating the branch if it wasn't (rename, legacy plan) and refreshing the plan on it — and the launch request carries `branchExists: true` so hula-server checks out the existing branch instead of creating one. Plans are no longer pushed to `origin/main`; they reach `main` only when the PR merges. Requires a matching hula-server version.
+
+## [1.27.0] - 2026-09-04
+
+### Changed
+
+- `hula init` now scaffolds working `.hublaunch/hooks/beforeLaunch.ts` and `afterMerge.ts` files (a local-only active example plus commented-out Slack and Neon+Vercel database-branch ideas) instead of only a README, and wires both into the generated config as real (uncommented) lines by default — superseding `1.26.0`'s commented-out-placeholder behavior. A project that already has `hooks.beforeLaunch`/`hooks.afterMerge` configured is unaffected; a project with neither configured will now run these (side-effect-free) hooks automatically after upgrading and re-running `hula init`. Note that if a `beforeLaunch.ts`/`afterMerge.ts` file already exists at the default path (even one hand-written before this change), init leaves it in place but still wires the config key to that path when the key was never configured, so a previously-inert file at that path becomes active.
+
+### Fixed
+
+- Pinned `core-js` via `overrides`/`pnpm.overrides` to `^3.23.3` (the first non-deprecated release per npm's own deprecation notice) to prevent the `deprecated subdependencies found: core-js@2.6.12` warning some users saw on `pnpm i -g hub-launch`.
+
+## [1.26.0] - 2026-09-03
+
+### Added
+
+- `beforeLaunch` and `afterMerge` project hooks. `beforeLaunch` runs before `hula launch` sends its request, letting a project hook provision per-launch resources (e.g. an isolated database branch) and inject the resulting environment variables into the launch — a hook failure aborts the launch rather than proceeding against the wrong resources. `afterMerge` runs after `hula approve` successfully merges a PR, for best-effort cleanup of whatever `beforeLaunch` provisioned. `hula init` now scaffolds commented-out placeholders for both in generated configs.
+
+### Changed
+
+- Removed the `deploymentStartup` hook and its Clerk/Auth0 preview-auto-login scaffold — unrelated to the new lifecycle hooks and superseded by `hula preview`'s built-in auto-login fallback.
+
+### Fixed
+
+- Hook execution no longer runs through a shell on POSIX systems, so shell metacharacters in a hook's context (e.g. backticks in a PR title) can no longer be reinterpreted instead of passed through as literal text.
+
 ## [1.25.0] - 2026-08-23
 
 ### Added
