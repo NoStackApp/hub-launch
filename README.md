@@ -126,10 +126,11 @@ they're there when you want them:
 | `/hula-info`     | Peek at a run: live logs, PR diff, initial summary, lessons                          |
 | `/hula-launch`   | Launch a plan manually (normally offered automatically after `/hula-plan`)           |
 | `/hula-confirm`  | Re-validate a plan you've edited by hand                                             |
-| `/hula-upload`   | Sync a plan to `origin/main` (normally automatic during launch)                      |
+| `/hula-upload`   | Sync a plan to its feature branch or `origin/main` (normally automatic)              |
 | `/hula-schedule` | Run or schedule autonomous actions (e.g. a nightly `harden` security audit)          |
 | `hula error-watcher` | Manage production Error Watchers — inbound error webhooks that auto-launch fix PRs |
 | `/hula-help`     | Interactive onboarding and reference — walks through setup, the workflow, or any command/skill |
+| `/hula-research` | Research the codebase (or a specific topic) and get a clear, grounded R&D report      |
 | `/hula-create`   | Legacy: create an issue without launching (the modern flow is `/hula-plan` → launch) |
 
 Full details: [Commands Reference](./docs/commands.md) ·
@@ -250,7 +251,7 @@ returns a not-found message.
 
 ## Demo
 
-<a href="https://www.youtube.com/watch?v=4-YRVB7mQZ8" target="_blank">
+<a href="https://www.youtube.com/watch?v=3_mrgaSsRdw" target="_blank">
   <img src="./docs/assets/demo-preview.svg" alt="Watch hub-launch demo on YouTube" width="100%"/>
 </a>
 
