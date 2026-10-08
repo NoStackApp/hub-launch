@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.31.0] - 2026-10-08
+
+### Added
+
+- `hula launch --issue <ref>`, `--pr <ref>` and `--base <branch>` — launch directly from an existing GitHub issue or pull request. `--issue` takes on an open issue (branch `issue-<n>`, plan generated from the issue text, PR linked with `Closes #N`); `--pr` continues an open same-repo pull request on its own head branch (fork PRs are rejected); `--base` cuts the work branch from, and opens the PR into, a non-default branch. Both `--issue` and `--pr` accept a number, `#number`, or a full GitHub URL, and the plan file becomes optional (generated from the GitHub text when omitted). Requires a hula-server with launch-from-existing support; an older server ignores the new `issueNumber` / `prNumber` / `headBranch` / `baseBranch` request fields, so the launch still runs but the linkage is dropped.
+- `/hula-plan --issue <n>` and `/hula-plan --pr <n>` — plan from an existing issue or same-repo pull request. The skill reads the issue or PR (read-only), drafts and validates the plan from it, defaults the name to `issue-<n>` / `pr-<n>`, and emits a `<!-- hula-source -->` comment so the Launch Offer and `/hula-launch` pass `--issue` / `--pr` to the launch. `hula script launch-run` now forwards `--issue`, `--pr` and `--base` to `hula launch` and reports `prNumber` in its JSON.
+- Per-repo `sandboxProfile` in `.hublaunch` config (`{ type: base|android, jdk?: 17|21 }`) to select the Android sandbox image (JDK 17/21, Android SDK, fastlane). `hula init` asks "What does this project build?" once — only when no `sandboxProfile` is set — preselecting `android` when a Gradle/Android project is detected, and warns when an Android profile pins `containerResources` below 4 vCPU / 8 GiB. `hula launch`, `hula schedule` and `hula error-watcher --create` send the configured profile, and `--sandbox-profile base|android|android:17|android:21` overrides it per task. The `base` profile is omitted from request bodies, so existing payloads are unchanged.
+- `hula login --invite <code>` — apply an open-source program invite at login. When the server grants the program, the CLI reports the Pro period and its end date; a code that wasn't applied (already used, expired, or the account already has Pro) produces a warning instead of a silent login.
+- Chat-scoped backlog: `/hula-plan`, `/hula-fix` and `/hula-approve` now keep a per-chat list of out-of-scope items that surface mid-conversation, stored in `.hublaunch/.backlogs/<key>.json` via the new `hula script backlog-init` and `backlog-add` scripts. The session hook records the real Claude Code session id on each backlog file for provenance. When `hulaApiKey` / `hulaProjectUrl` are configured, items are pushed to hula-project (best-effort, non-blocking — the local file stays the source of truth), and the new `hula script backlog-resync` retries unsynced items. `/hula-approve` ends by listing the chat's open backlog items with a suggested next action for each.
+
+### Fixed
+
+- `hula launch`: the "Track it" link now points at the server the task was launched on, instead of always linking to the production dashboard — preview and self-hosted launches now open the right place.
+
 ## [1.30.0] - 2026-09-18
 
 ### Fixed
