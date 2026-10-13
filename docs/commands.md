@@ -15,8 +15,9 @@ Complete reference for every hula CLI command.
 | `hula schedule` | —     | Trigger or schedule an execute-action (e.g. `--built-in harden`) |
 | `hula error-watcher` | — | Manage production Error Watchers (inbound error webhooks that auto-launch fix PRs) |
 | `hula info`    | —     | View plan info (logs, diff, initial, lessons, clientSessionId)    |
+| `hula plan <subcommand>` | — | Remote-planning command group (used by `/hula-plan` and `/hula-followup`) |
 | `hula script <name>` | — | Run a bundled cross-platform workflow script (used by the Agent Skills) |
-| `hula instructions <name>` | — | Print a bundled instruction doc (`planning`, `proceed`, `skill-creation`) |
+| `hula instructions <name>` | — | Print a bundled instruction doc (`planning`, `proceed`, `skill-creation`, `assess`, `plan-initiate`, `plan-generate`) |
 | `hula session-hook` | — | Claude Code PreToolUse hook that captures launch-session provenance |
 
 ## Global Options
@@ -354,6 +355,42 @@ under **Projects → gear icon → Error reporting API keys** — there is no RE
 route for it, so the CLI points you there rather than minting one (and therefore
 has no `--rotate`). Credentials resolve flags → `.hublaunch/hublaunch.config.js`
 → env, exactly like `hula schedule`, and are never written to any file.
+
+---
+
+## `hula plan`
+
+The remote-planning command group. Every subcommand prints exactly one JSON
+object on stdout (logs go to stderr) so the `/hula-plan` and `/hula-followup`
+skills can parse one shape. You rarely run these by hand — the skills do.
+
+```bash
+hula plan start --name <trackingName> (--prompt <text> | --prompt-file <path>) \
+  [--issue <n>] [--folder <sub>] [--local | --remote] [--test] [--handoff <user>]
+hula plan wait <planId> [--interval <seconds>=20] [--max-minutes <n>=120] [--force]
+hula plan followup <planId>
+hula plan answer <planId> --file <json>
+hula plan understanding <planId> --file <markdown>
+hula plan context <planId> --file <markdown> [--assessment-file <md>] [--questions <json>]
+hula plan plan-text <planId> --file <planPath>
+hula plan draft-and-launch <planId> [--test] [--handoff <user>]
+```
+
+- **`start`** records a planning run. Mode is `--local` / `--remote`, or auto:
+  remote under Claude Code (`CLAUDECODE=1`), local everywhere else. Remote mode
+  needs `hulaApiKey` + `hulaProjectUrl`; local mode records best-effort and
+  degrades silently with no server config.
+- **`wait`** polls the stage endpoint every 20 s (min 10) up to 2 h and exits on
+  a stage change, a failed/cancelled task, a timeout, or 5 consecutive network
+  failures. It refuses to run outside Claude Code unless `--force`.
+- **`followup`** fetches the full record; **`answer`** / **`understanding`** /
+  **`context`** / **`plan-text`** persist each planning artifact; and
+  **`draft-and-launch`** hands the confirmed plan to the server to draft and
+  launch automatically.
+
+All subcommands accept `--url <serverUrl>` and `--api-key <key>` overrides with
+the same precedence as `hula info`. See [Advanced Usage](advanced.md) for the
+full remote-planning flow.
 
 ---
 

@@ -28,6 +28,23 @@ detailed implementation plan with acceptance criteria. It then validates the
 plan until it stands completely on its own — no hidden chat context — and asks
 one question: **ready to launch?**
 
+#### Remote planning
+
+In Claude Code, `/hula-plan` defaults to **remote** planning: the exhaustive
+repo analysis and the clarifying questions are produced by the hula-server (for
+half a plan's credits). Your session kicks it off, drops a one-line notice, and
+ends its turn; when the server has questions it resumes automatically and runs
+the follow-up conversation inline (or run `/hula-followup <planId>` from any
+checkout of the repo to pick it up anywhere — nothing is lost if the original
+session dies). After you confirm the understanding, you choose: **plan locally**
+(you approve the plan before it launches) or let **HubLaunch draft the plan and
+launch it automatically**. Pass `--local` to force today's all-local flow (also
+the default in harnesses other than Claude Code, and whenever `--pr` is used);
+pass `--remote` to force remote. Local planning still backs up its context,
+answers, understanding, and plan text to the dashboard when the repo is
+configured for hula-server. Remote planning requires a hula-server with the
+`/api/v1/planning` endpoints.
+
 Say yes, and the rest is automatic: a GitHub issue is created, a cloud sandbox
 implements the plan, runs your checks and tests, opens a pull request, and
 verifies the result against the plan — posting a merge-safety score so you know
@@ -96,6 +113,17 @@ your own model: Claude (subscription Pro/Max or an Anthropic API key), OpenAI, o
 [Choosing your LLM provider](./docs/advanced.md#choosing-your-llm-provider) for
 details on all three options and how to switch between them.
 
+**Sandbox image (React Native / Android):** `hula init` also asks what the
+project builds and records the answer as `sandboxProfile` in
+`.hublaunch/hublaunch.config.js`. `base` (the default) covers Node, Python 3.12
+and PHP 8.3; `android` adds JDK 17 & 21, the Android SDK and Ruby + fastlane, so
+Gradle builds work in the sandbox. Existing Android projects get `android`
+preselected; for a greenfield app, just pick it. Every `hula launch`,
+`hula schedule` and `hula error-watcher --create` uses the configured profile;
+override one task with `--sandbox-profile base|android|android:17|android:21`.
+The question is asked only once per repo — edit the config to change it.
+iOS builds are not supported (sandboxes are Linux).
+
 ## Notifications
 
 HubLaunch tells you when it's your turn. Set `updateNotificationUrl` in
@@ -114,6 +142,35 @@ the PR is ready (with its verification score). See
 [Notifications](./docs/notifications.md) for the payloads, a Telegram setup,
 and ideas for automating your side of the loop with `hula info`.
 
+## Project goals
+
+State what your project is for in a committed file, `.hublaunch/goals.md`, and
+HubLaunch will judge incoming requests against it. Before planning anything,
+`/hula-assess` and `/hula-plan` score a request 1–5 on code integrity, project
+goals, security, compatibility, and maintenance burden — so when you triage an
+issue someone else filed, you see an honest verdict (and a safer alternative
+when a score is below 5) before you commit to building it.
+
+The file is plain markdown:
+
+```markdown
+# Project goals
+
+A short paragraph on what the project is for and who it serves.
+
+- A concrete goal
+- Another goal
+
+## Non-goals
+- Something the project deliberately does not do
+```
+
+Because it is **committed** (not gitignored like `hublaunch.config.js`), other
+maintainers and the remote planning sandbox read the same goals. If the file is
+absent, `/hula-assess` and `/hula-plan` infer your goals from the README and
+docs and offer to write it for you — commit it so everyone shares one source of
+truth.
+
 ## Other commands
 
 You'll rarely need these — the two commands above cover the normal loop — but
@@ -121,6 +178,7 @@ they're there when you want them:
 
 | Command          | What it's for                                                                       |
 | ---------------- | ----------------------------------------------------------------------------------- |
+| `/hula-followup` | Answer a remote plan's questions from any checkout and finish planning (`/hula-followup <planId>`) |
 | `/hula-fix`      | Fix a gap or bug on the PR branch in an isolated worktree — describe the problem     |
 | `/hula-verify`   | Full verification report, criterion by criterion (a summary score is auto-posted)    |
 | `/hula-info`     | Peek at a run: live logs, PR diff, initial summary, lessons                          |
@@ -131,6 +189,7 @@ they're there when you want them:
 | `hula error-watcher` | Manage production Error Watchers — inbound error webhooks that auto-launch fix PRs |
 | `/hula-help`     | Interactive onboarding and reference — walks through setup, the workflow, or any command/skill |
 | `/hula-research` | Research the codebase (or a specific topic) and get a clear, grounded R&D report      |
+| `/hula-assess`   | Honest 1–5 verdict on whether a request (or `--issue`/`--pr`) is a good idea before planning it |
 | `/hula-create`   | Legacy: create an issue without launching (the modern flow is `/hula-plan` → launch) |
 
 Full details: [Commands Reference](./docs/commands.md) ·
@@ -248,6 +307,47 @@ individually) that simply carries a shared `groupId`. Grouping and
 `--show-group` require a **hula-server with feature-group support**; against an
 older server launches still succeed but stay ungrouped and `--show-group`
 returns a not-found message.
+
+## Launch from an existing issue or PR
+
+Open-source work usually starts from an issue someone else filed, or from a pull
+request that already exists. Instead of writing a plan from scratch, point
+`hula launch` at the GitHub source and it builds the plan from the issue or PR
+text for you:
+
+```bash
+# Take on an existing issue. Branch `issue-42`, plan generated from the issue,
+# and the resulting PR links back with `Closes #42`.
+hula launch --issue 42
+
+# Continue an existing pull request in THIS repository. The work happens on the
+# PR's own head branch and new commits are added on top of what's already there.
+hula launch --pr 17
+
+# Open the PR into a non-default base branch (cuts the work branch from it too).
+hula launch my-task plan.md --base develop
+```
+
+`--issue` and `--pr` accept a number (`42`), a `#`-number (`#42`), or a full
+GitHub URL (`https://github.com/<owner>/<repo>/issues/42`). With either flag the
+plan file is optional — pass one to use it as the instructions, or omit it to
+generate one. A single positional is always the **tracking name**, never a plan
+path.
+
+| Flag               | What it does                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------ |
+| `--issue <ref>`    | Work on an existing issue (number, `#number`, or URL). Never creates or edits the issue.          |
+| `--pr <ref>`       | Continue an existing same-repo pull request. Commits the plan to its head branch; fork PRs are rejected. |
+| `--base <branch>`  | Cut the work branch from `<branch>` and open the PR into it (default: the repository default branch). |
+
+The same sources work from your coding agent, with a planning step first:
+`/hula-plan --issue 42 <extra instructions>` or `/hula-plan --pr 17 <what to
+change>` reads the issue or PR, drafts and validates a plan from it, and the
+launch that follows carries the `--issue` / `--pr` flag through.
+
+These flags require a **hula-server with launch-from-existing support**; an
+older server ignores the extra fields, so the run still starts but the issue/PR
+linkage is dropped.
 
 ## Demo
 

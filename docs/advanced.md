@@ -367,6 +367,59 @@ symlinks by default. Prefer repo-local command files instead? Run
 `hula init --with-claude-commands`. The committed `.agents/skills/` directory
 (read by GitHub Copilot, Cursor, Codex, and 30+ tools) is unchanged.
 
+## Remote planning
+
+`/hula-plan` can run its repo analysis on the hula-server instead of entirely in
+your chat session. This lets you "set a plan in motion" and finish it later — or
+from a different machine — without keeping the original session alive.
+
+**Modes.** `--remote` forces remote; `--local` forces today's all-local flow.
+With neither flag, the mode is auto-detected: **remote** inside Claude Code
+(detected by the `CLAUDECODE=1` environment variable, which is the only signal
+consulted), **local** in every other harness (GitHub Copilot, a plain terminal,
+CI). `--pr` is not supported remotely yet, so it forces local. Remote planning
+requires `hulaApiKey` + `hulaProjectUrl` in `.hublaunch/hublaunch.config.js`
+(run `hula login`) and a hula-server with the `/api/v1/planning` endpoints; it
+costs half a plan's credits.
+
+**The flow (remote).**
+
+```text
+/hula-plan "<prompt>"         (Claude Code)
+  → hula plan start            POST /api/v1/planning (remote); returns a planId
+  → hula plan wait <planId>    background poll (every 20 s, up to 2 h)
+  ↓ (the session ends its turn and resumes when the stage changes)
+  stage QUESTIONS        → run the /hula-followup flow inline
+  stage GENERATE_PLAN /  → "no questions needed — drafting and launching"
+        LAUNCHED
+```
+
+When the server finds no questions, it drafts and launches the plan on its own;
+your session only reports it. Otherwise, the follow-up flow asks the questions,
+records the answers (and any follow-up rounds), stores a confirmed
+understanding, then asks whether to **plan locally** (you approve the plan
+before launch) or let **HubLaunch draft and launch it automatically**.
+
+**`hula plan wait` limits.** It polls every 20 s (minimum 10), for at most 2
+hours, and exits on a stage change, a failed/cancelled task, the timeout, or 5
+consecutive network failures — so a stuck server can never leave a zombie wait.
+It refuses to run outside Claude Code unless you pass `--force`; in other
+harnesses you resume manually with `/hula-followup <planId>` when notified.
+
+**`/hula-followup <planId>`.** Resume planning from any checkout of the repo
+(that is where the config, API key, and "plan locally" live). It fetches the
+server record, asks any unanswered questions, iterates, confirms the
+understanding, and runs the local-or-remote choice — identical whether it was
+entered automatically from a waiting `/hula-plan` session or run by hand. The
+server holds all state; the planId is the only thing the local side needs, so a
+dead session loses nothing.
+
+**Local planning still syncs.** Even in `--local` mode (or a non-Claude
+harness), `/hula-plan` creates the server record and uploads the context,
+questions, answers, understanding, and final plan text with short best-effort
+calls, so every plan is backed up on the dashboard. No server credentials → it
+skips silently; a failed call → one warning line, and planning continues.
+
 ## `hula schedule`
 
 `hula schedule` triggers a built-in or custom execute-action (e.g. the `harden` security audit) on the hula-project server, which provisions a sandbox to run it and opens a PR / plan / feedback as the outcome.
@@ -472,6 +525,45 @@ hula info my-feature --logs --raw            # prints the raw run log to stdout
 Content keys route to `GET /api/v1/info/:planName`; `--clientSessionId` routes to
 the status endpoint. `--diff`/`--initial` can be `null` when there is no PR yet.
 See the [Commands Reference](./commands.md#hula-info) for details.
+
+## Assessing requests
+
+Before planning a change, `/hula-assess` (and `/hula-plan`, inline) judge whether
+the request is a **good idea for the project** — not whether it can be built.
+Both follow one shared rubric (`hula instructions assess`), so a local and a
+remote assessment read identically.
+
+Five categories, each scored 1–5:
+
+| Category | What it weighs |
+| --- | --- |
+| Code integrity | Fit with existing architecture; duplication; load-bearing modules; test coverage |
+| Project goals | Alignment with stated/inferred goals; scope creep; who it serves |
+| Security | New inputs, auth/secrets, injection, new dependencies, data exposure |
+| Compatibility | Breaking API/CLI/config/schema/behavior changes; migrations; semver |
+| Maintenance burden | Ongoing cost, added surface area, docs and support load |
+
+Labels run **5 Great idea · 4 Good · 3 Safe · 2 Caution · 1 Unwise**. A 5 is the
+expected normal; anything below 5 is a concern that must be explained with
+`file:line` evidence. The **overall verdict is the lowest category score** (never
+an average), so a single serious concern is never hidden behind four good ones.
+When any category is below 5, the block is titled **"Honest assessment"** and
+includes a concrete **Safer alternative** — a modified goal that keeps the
+benefit and drops the drawback. When every category is 5 the title is simply
+"Assessment".
+
+Project goals come from `.hublaunch/goals.md` when it exists (a committed file:
+an H1 `# Project goals`, a short paragraph, a bullet list, and an optional
+`## Non-goals`). When it is absent, goals are inferred from the README and docs,
+listed under "Inferred project goals", and the skill offers to write the file so
+future assessments and remote planning share the same goals. Assessment output
+stays in chat — nothing is posted to GitHub.
+
+```bash
+/hula-assess "add a --json flag to hula info"   # a free-text request
+/hula-assess --issue 42                          # an open issue
+/hula-assess --pr 17                             # an open same-repo PR
+```
 
 ## Legacy: `/hula-create`
 
