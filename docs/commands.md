@@ -15,8 +15,13 @@ Complete reference for every hula CLI command.
 | `hula schedule` | —     | Trigger or schedule an execute-action (e.g. `--built-in harden`) |
 | `hula error-watcher` | — | Manage production Error Watchers (inbound error webhooks that auto-launch fix PRs) |
 | `hula info`    | —     | View plan info (logs, diff, initial, lessons, clientSessionId)    |
+| `hula update`  | —     | Upgrade hub-launch to the latest release (or `--check` / `--auto on\|off`) |
+| `hula credentials sync` | — | Save the current credentials to HubLaunch as the `default` set (web + phone planning) |
+| `hula credentials list` | — | List the credential sets stored on HubLaunch (hints only) |
+| `hula init web` | — | Enable web + phone planning and sync now (`hula init web disable` turns it off) |
+| `hula plan <subcommand>` | — | Remote-planning command group (used by `/hula-plan` and `/hula-followup`) |
 | `hula script <name>` | — | Run a bundled cross-platform workflow script (used by the Agent Skills) |
-| `hula instructions <name>` | — | Print a bundled instruction doc (`planning`, `proceed`, `skill-creation`) |
+| `hula instructions <name>` | — | Print a bundled instruction doc (`planning`, `proceed`, `skill-creation`, `assess`, `plan-initiate`, `plan-generate`) |
 | `hula session-hook` | — | Claude Code PreToolUse hook that captures launch-session provenance |
 
 ## Global Options
@@ -51,6 +56,8 @@ Initialize hula configuration.
 hula init                # Interactive setup (also logs you in if needed)
 hula init --force        # Overwrite existing config
 hula init --skip-login   # Configure without the automatic login flow
+hula init web            # Enable web + phone planning and sync credentials now
+hula init web disable    # Disable it and delete the stored credential set
 ```
 
 The interactive setup prompts for all configuration, including (as the final
@@ -66,6 +73,17 @@ OpenRouter — then prompts for that provider's credential. The credential promp
 is optional; press Enter to skip it. If you skip it, `hula init` prints a
 reminder, and `hula launch` will ask for the credential interactively the first
 time you need it.
+
+**Web and phone planning (`saveCredentials`):** once you are logged in, `hula
+init` and `hula login` ask once (default **yes**) whether to enable planning
+from the HubLaunch dashboard and your phone. Enabling it stores your GitHub
+token, provider key and forwarded env vars permanently (encrypted) on HubLaunch
+as the project's `default` credential set, refreshed on every launch — normally
+those secrets are kept only while a launched plan is in flight. Change the
+answer any time with **`hula init web`** (enable + sync immediately) or **`hula
+init web disable`** (disable, and after a confirmation delete the stored set
+from HubLaunch). Pass `--yes` to skip the confirmations. See
+[`hula credentials`](#hula-credentials).
 
 **Automatic login:** when `hula init` finishes and you are not yet authenticated
 (no HubLaunch API key, or no saved GitHub token), it flows straight into the
@@ -317,6 +335,79 @@ hula info my-feature --logs --raw            # prints the raw run log to stdout
 
 ---
 
+## `hula update`
+
+Upgrade the installed `hub-launch` CLI to the latest published release.
+
+```bash
+hula update                      # detect pnpm/npm, install @latest, refresh commands
+hula update --manager pnpm       # force the package manager
+hula update --check              # report only (exit 0 up to date, 2 available)
+hula update --auto on            # enable automatic updates (or: off)
+```
+
+| Flag                   | Description                                                            |
+| ---------------------- | --------------------------------------------------------------------- |
+| `--manager <pnpm\|npm>` | Force the package manager instead of auto-detecting it                |
+| `--check`              | Only report whether a newer version exists; don't install (exit 0/2)  |
+| `--auto <on\|off>`      | Turn automatic updates on or off (stored in `~/.hublaunch/settings.json`) |
+
+**What it does.** The package manager is detected from how the global binary was
+installed (a pnpm path or `PNPM_HOME` → pnpm, otherwise npm). The install always
+runs from your home directory, so a repo pinning a specific `packageManager`
+(e.g. `pnpm@9`) can't redirect the global bin dir. After installing, it makes
+sure the global Claude Code slash commands were refreshed — pnpm ≥ 10 blocks a
+package's postinstall until you approve builds, so `hula update` runs that step
+directly and, under pnpm, reminds you to `pnpm approve-builds -g` (select
+`hub-launch`) so future updates refresh the commands on their own. It finishes by
+printing the newly installed version.
+
+**Exit codes:** `0` success / up to date, `1` the install command failed, `2`
+`--check` found an available update.
+
+**The daily notice.** Any normal (interactive) command prints a one-line
+`⬆️  hub-launch <latest> is available …` notice at the end when a newer version
+is on npm, checked at most once per 24 h and cached in
+`~/.hublaunch/update-check.json`. It's suppressed on non-TTY output and on the
+`script` / `instructions` / `plan` / `session-hook` fast paths so machine-parsed
+output is never touched. Set `HULA_NO_UPDATE_CHECK=1` to disable it (e.g. in CI).
+
+**Automatic updates.** `hula login` and `hula init` ask once whether to keep the
+CLI current; `hula update --auto on|off` sets it without the prompt. When on, the
+upgrade runs **after** the current command completes (never during it) and
+reports what it did; the original command's exit code is preserved.
+
+---
+
+## `hula credentials`
+
+Manage the credential set this project stores on HubLaunch for **web and phone
+planning**. When `saveCredentials: true` (see [configuration](../README.md#configuration)),
+every `hula launch` and `hula plan start|draft-and-launch` already refreshes the
+`default` set after it succeeds; these commands let you push or inspect it
+explicitly. Secret values are never printed — only hints (e.g. `ghp_…k3Q9`).
+
+```bash
+hula credentials sync [--name <set>] [--project <owner/repo>] [--url <url>] [--api-key <key>]
+hula credentials list [--project <owner/repo>] [--url <url>] [--api-key <key>]
+```
+
+- **`sync`** resolves the same bundle a launch sends — the GitHub token (always
+  re-read from `gh auth token`, so a rotated token is refreshed), the provider
+  key, and the forwarded env vars — and upserts it as the `default` set (or the
+  `--name` you pass). It runs regardless of `saveCredentials`. Exit code is `0`
+  on success and `1` when nothing was saved (not logged in, no GitHub token, no
+  provider credential, or the server does not support credential sets).
+- **`list`** prints a hint-only table: set name, GitHub hint, providers, env-var
+  count, source, and last-synced date.
+
+`--url` / `--api-key` follow the same precedence as `hula info`.
+
+To enable or disable the feature, use `hula init web` / `hula init web disable`
+(see [`hula init`](#hula-init)).
+
+---
+
 ## `hula error-watcher`
 
 Manage production **Error Watchers** — inbound error webhooks that deduplicate
@@ -354,6 +445,42 @@ under **Projects → gear icon → Error reporting API keys** — there is no RE
 route for it, so the CLI points you there rather than minting one (and therefore
 has no `--rotate`). Credentials resolve flags → `.hublaunch/hublaunch.config.js`
 → env, exactly like `hula schedule`, and are never written to any file.
+
+---
+
+## `hula plan`
+
+The remote-planning command group. Every subcommand prints exactly one JSON
+object on stdout (logs go to stderr) so the `/hula-plan` and `/hula-followup`
+skills can parse one shape. You rarely run these by hand — the skills do.
+
+```bash
+hula plan start --name <trackingName> (--prompt <text> | --prompt-file <path>) \
+  [--issue <n>] [--folder <sub>] [--local | --remote] [--test] [--handoff <user>]
+hula plan wait <planId> [--interval <seconds>=20] [--max-minutes <n>=120] [--force]
+hula plan followup <planId>
+hula plan answer <planId> --file <json>
+hula plan understanding <planId> --file <markdown>
+hula plan context <planId> --file <markdown> [--assessment-file <md>] [--questions <json>]
+hula plan plan-text <planId> --file <planPath>
+hula plan draft-and-launch <planId> [--test] [--handoff <user>]
+```
+
+- **`start`** records a planning run. Mode is `--local` / `--remote`, or auto:
+  remote under Claude Code (`CLAUDECODE=1`), local everywhere else. Remote mode
+  needs `hulaApiKey` + `hulaProjectUrl`; local mode records best-effort and
+  degrades silently with no server config.
+- **`wait`** polls the stage endpoint every 20 s (min 10) up to 2 h and exits on
+  a stage change, a failed/cancelled task, a timeout, or 5 consecutive network
+  failures. It refuses to run outside Claude Code unless `--force`.
+- **`followup`** fetches the full record; **`answer`** / **`understanding`** /
+  **`context`** / **`plan-text`** persist each planning artifact; and
+  **`draft-and-launch`** hands the confirmed plan to the server to draft and
+  launch automatically.
+
+All subcommands accept `--url <serverUrl>` and `--api-key <key>` overrides with
+the same precedence as `hula info`. See [Advanced Usage](advanced.md) for the
+full remote-planning flow.
 
 ---
 
