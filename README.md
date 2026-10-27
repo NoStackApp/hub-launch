@@ -28,6 +28,27 @@ detailed implementation plan with acceptance criteria. It then validates the
 plan until it stands completely on its own — no hidden chat context — and asks
 one question: **ready to launch?**
 
+#### Remote planning
+
+In Claude Code, `/hula-plan` defaults to **remote** planning: the exhaustive
+repo analysis and the clarifying questions are produced by the hula-server (for
+half a plan's credits). Your session kicks it off, drops a one-line notice, and
+ends its turn; when the server has questions it resumes automatically and runs
+the follow-up conversation inline (or run `/hula-followup <planId>` from any
+checkout of the repo to pick it up anywhere — nothing is lost if the original
+session dies). The sandbox runs the same honest assessment as local `/hula-plan`,
+so `/hula-followup` shows it first — titled by its overall score, with a
+proceed / safer-alternative / stop question when any category scores low and an
+offer to save `.hublaunch/goals.md` when none exists. After you confirm the
+understanding, you choose: **plan locally**
+(you approve the plan before it launches) or let **HubLaunch draft the plan and
+launch it automatically**. Pass `--local` to force today's all-local flow (also
+the default in harnesses other than Claude Code, and whenever `--pr` is used);
+pass `--remote` to force remote. Local planning still backs up its context,
+answers, understanding, and plan text to the dashboard when the repo is
+configured for hula-server. Remote planning requires a hula-server with the
+`/api/v1/planning` endpoints.
+
 Say yes, and the rest is automatic: a GitHub issue is created, a cloud sandbox
 implements the plan, runs your checks and tests, opens a pull request, and
 verifies the result against the plan — posting a merge-safety score so you know
@@ -47,7 +68,29 @@ Review the verified PR and approve it. HubLaunch merges, closes the issue,
 cleans up branches and worktrees, and fast-forwards your local `main`. Plan the
 next thing.
 
+Before merging, `hula approve` reads the server's stored **merge assessment**
+for the PR. If the confidence is below your project threshold (or no assessment
+is available) it prints the concerns and recommended end-user test steps and
+asks you to confirm — pass `--force` to merge without the prompt. Set the
+threshold with [`mergePolicy`](./docs/advanced.md#merge-policy).
+
 That's the whole loop. Everything between the two commands happens without you.
+
+### Backlogs
+
+While you plan, fix, or approve, things come up that are out of scope for the
+work in front of you — "we should rename this later", "the retries need a
+timeout". HubLaunch keeps these in a per-chat **backlog** so they aren't lost.
+Each item is stored locally and synced to the plan's card on the
+[dashboard](https://www.hublaunch.site), two ways: items you add show up on the
+dashboard, and items ticked off (or added) on the dashboard or another machine
+show up back in your chat.
+
+- See any plan's backlog from anywhere — even a fresh checkout with no local
+  file: `/hula-help backlog <trackingName>`.
+- `/hula-approve` ends by printing the chat's open backlog in a **suggested
+  order** — the smallest independent item first, with anything blocked by
+  another item listed separately — each with a one-line next action.
 
 ## Why it's different
 
@@ -66,10 +109,23 @@ That's the whole loop. Everything between the two commands happens without you.
 ## Setup
 
 ```bash
-npm install -g hub-launch    # once per machine (or: pnpm add -g hub-launch)
+curl -fsSL https://hublaunch.site/install.sh | sh    # once per machine, no Node required
 cd <your-project>
-hula init                    # configures the project AND logs you in
+hula init                                             # configures the project AND logs you in
 ```
+
+Prefer to review the installer before running it? (recommended)
+
+```bash
+curl -fsSL https://hublaunch.site/install.sh -o install.sh
+less install.sh      # review it
+sh install.sh
+```
+
+The curl installer drops a standalone `hula` binary in `~/.hublaunch/bin`
+(override with `HULA_INSTALL_DIR`, never needs sudo) and verifies it against
+the release's published checksums. **Alternative (Node users):** `npm install
+-g hub-launch` (or `pnpm add -g hub-launch`).
 
 `hula init` is the whole onboarding: it walks you through configuration
 interactively, installs the slash commands (Agent Skills) into your project
@@ -83,18 +139,107 @@ set up; it auto-runs `hula init` if the project hasn't been initialized yet.
 Either command completes onboarding — whichever you run first, you end up fully
 set up.
 
+Logging into a second project on the same machine reuses the GitHub login you
+already have — no browser, no device code — so `hula init` in another repo
+finishes in one step. Run `hula login --fresh` when you need to open the
+browser and sign in again (for example, to switch GitHub accounts).
+
 `hula init` is safe to re-run any time — your keys and team settings are
 preserved — and you should re-run it after upgrading the CLI.
 
 That's the only time you'll meaningfully touch the `hula` CLI: the rest of it
 exists mostly for your agent to call on your behalf.
 
-**Requirements:** Node.js ≥ 18, the GitHub CLI (`gh`) authenticated via
-`gh auth login`, and an LLM provider credential for the sandbox agent — bring
+**Requirements:** the GitHub CLI (`gh`) authenticated via `gh auth login`
+(plus Node.js ≥ 18 only if you install through npm — the curl install needs no
+Node), and an LLM provider credential for the sandbox agent — bring
 your own model: Claude (subscription Pro/Max or an Anthropic API key), OpenAI, or
 400+ models via OpenRouter. Pick one during `hula init`. See
 [Choosing your LLM provider](./docs/advanced.md#choosing-your-llm-provider) for
 details on all three options and how to switch between them.
+
+**Sandbox image (React Native / Android):** `hula init` also asks what the
+project builds and records the answer as `sandboxProfile` in
+`.hublaunch/hublaunch.config.js`. `base` (the default) covers Node, Python 3.12
+and PHP 8.3; `android` adds JDK 17 & 21, the Android SDK and Ruby + fastlane, so
+Gradle builds work in the sandbox. Existing Android projects get `android`
+preselected; for a greenfield app, just pick it. Every `hula launch`,
+`hula schedule` and `hula error-watcher --create` uses the configured profile;
+override one task with `--sandbox-profile base|android|android:17|android:21`.
+The question is asked only once per repo — edit the config to change it.
+iOS builds are not supported (sandboxes are Linux).
+
+## Updating hula
+
+```bash
+hula update          # upgrade to the latest release with your package manager
+hula update --check  # just report whether a newer version exists
+```
+
+`hula update` detects whether you installed with pnpm or npm (override with
+`--manager pnpm|npm`), installs the latest `hub-launch`, refreshes the global
+Claude Code slash commands, and prints the new version. It always runs the
+install from your home directory, so a repo that pins a specific
+`packageManager` can't send the upgrade to the wrong place.
+
+You don't have to remember to run it: any normal `hula` command prints a
+one-line notice at the end when a newer version is available (checked at most
+once a day). To apply updates automatically, turn on auto-update — `hula login`
+and `hula init` ask once, or run `hula update --auto on` (and `--auto off` to
+stop). With it on, the upgrade runs **after** your command finishes and tells
+you what it did — never in the middle of a command.
+
+Set `HULA_NO_UPDATE_CHECK=1` to silence the check entirely (useful in CI).
+
+> **pnpm users:** pnpm ≥ 10 blocks a package's postinstall until you approve
+> builds, which is what refreshes the global `/hula-*` commands on upgrade.
+> `hula update` runs that step for you, but to let it happen automatically on
+> every future update run `pnpm approve-builds -g` once and select `hub-launch`.
+
+## Planning from the web or your phone
+
+You can plan and launch from the [HubLaunch dashboard](https://hublaunch.site)
+or your phone, without uploading a `.env` or typing a token. To do that,
+HubLaunch needs a stored set of credentials, and the `hula` CLI already resolves
+exactly what a launch needs every time it runs — so it can save them for you.
+
+`hula init` and `hula login` ask once (default **yes**):
+
+```
+🌐 Web and phone planning
+To plan from the HubLaunch dashboard or your phone, HubLaunch must keep some secrets
+permanently, encrypted, in its database: your GitHub token, your provider key, the
+env vars you forward to the sandbox and your update-notification settings (the
+Slack/webhook URL and name tag). Normally HubLaunch keeps your secrets only while a
+launched plan is in flight (until its PR is merged). Enabling this stores them until you
+turn it off with `hula init web disable`, which also deletes them from HubLaunch.
+```
+
+This writes `saveCredentials: true` to `.hublaunch/hublaunch.config.js`. When a
+provider key is already configured, `hula login` (and the login chained from
+`hula init`) saves the `default` credential set to HubLaunch right away, so the
+dashboard and your phone can plan immediately — you don't have to wait for the
+first launch. If no provider key is configured yet, login says the credentials
+will be saved on your first launch instead. Afterwards every `hula launch` and
+remote `hula plan` refreshes the stored set, so a rotated token never goes
+stale. The credentials are already transmitted on every launch; enabling this
+only changes whether HubLaunch keeps them.
+
+- Enable at any time: **`hula init web`** (also syncs immediately).
+- Disable: **`hula init web disable`** (also deletes the stored set from HubLaunch).
+- Push without launching: **`hula credentials sync`** — always re-sends the
+  current `gh auth token`, so run it after rotating your GitHub token.
+- See what the server holds (hints only, never values): **`hula credentials list`**.
+
+Env vars are forwarded to the sandbox only when their names are listed in
+`envVars` (or `envVars: "all"`) in `.hublaunch/hublaunch.config.js`; `sync` lists
+the ones it stored and warns when none were forwarded. Dashboard and phone
+launches (and retries of CLI-started plans) use **your** current `default` set,
+so run `hula credentials sync` after changing `envVars` or rotating a token.
+
+Only hints like `ghp_…k3Q9` are ever printed. See
+[`hula credentials`](./docs/commands.md#hula-credentials) and
+[revoking stored credentials](./docs/advanced.md#stored-credentials-for-web--phone-planning).
 
 ## Notifications
 
@@ -110,9 +255,38 @@ export const config = {
 ```
 
 You'll get a message when the task starts, when the issue is created, and when
-the PR is ready (with its verification score). See
+the PR is ready (with its verification score and `mergeAssessment`). See
 [Notifications](./docs/notifications.md) for the payloads, a Telegram setup,
 and ideas for automating your side of the loop with `hula info`.
+
+## Project goals
+
+State what your project is for in a committed file, `.hublaunch/goals.md`, and
+HubLaunch will judge incoming requests against it. Before planning anything,
+`/hula-assess` and `/hula-plan` score a request 1–5 on code integrity, project
+goals, security, compatibility, and maintenance burden — so when you triage an
+issue someone else filed, you see an honest verdict (and a safer alternative
+when a score is below 5) before you commit to building it.
+
+The file is plain markdown:
+
+```markdown
+# Project goals
+
+A short paragraph on what the project is for and who it serves.
+
+- A concrete goal
+- Another goal
+
+## Non-goals
+- Something the project deliberately does not do
+```
+
+Because it is **committed** (not gitignored like `hublaunch.config.js`), other
+maintainers and the remote planning sandbox read the same goals. If the file is
+absent, `/hula-assess` and `/hula-plan` infer your goals from the README and
+docs and offer to write it for you — commit it so everyone shares one source of
+truth.
 
 ## Other commands
 
@@ -121,21 +295,44 @@ they're there when you want them:
 
 | Command          | What it's for                                                                       |
 | ---------------- | ----------------------------------------------------------------------------------- |
+| `/hula-followup` | Answer a remote plan's questions from any checkout and finish planning (`/hula-followup <planId>`) |
 | `/hula-fix`      | Fix a gap or bug on the PR branch in an isolated worktree — describe the problem     |
 | `/hula-verify`   | Full verification report, criterion by criterion (a summary score is auto-posted)    |
 | `/hula-info`     | Peek at a run: live logs, PR diff, initial summary, lessons                          |
 | `/hula-launch`   | Launch a plan manually (normally offered automatically after `/hula-plan`)           |
 | `/hula-confirm`  | Re-validate a plan you've edited by hand                                             |
 | `/hula-upload`   | Sync a plan to its feature branch or `origin/main` (normally automatic)              |
+| `/hula-revert`   | Undo a merged branch — opens a safe Revert PR, reopens the issue, restores the branch (`--merge` to land it) |
 | `/hula-schedule` | Run or schedule autonomous actions (e.g. a nightly `harden` security audit)          |
 | `hula error-watcher` | Manage production Error Watchers — inbound error webhooks that auto-launch fix PRs |
-| `/hula-help`     | Interactive onboarding and reference — walks through setup, the workflow, or any command/skill |
+| `/hula-help`     | Interactive onboarding and reference — walks through setup, the workflow, any command/skill, or `/hula-help backlog [<trackingName>]` to view a plan's backlog |
 | `/hula-research` | Research the codebase (or a specific topic) and get a clear, grounded R&D report      |
+| `/hula-assess`   | Honest 1–5 verdict on whether a request (or `--issue`/`--pr`) is a good idea before planning it |
 | `/hula-create`   | Legacy: create an issue without launching (the modern flow is `/hula-plan` → launch) |
 
 Full details: [Commands Reference](./docs/commands.md) ·
 [Advanced Usage](./docs/advanced.md) (launch pipeline internals, resume,
 test mode, env forwarding, scheduling).
+
+## Reverting a merged branch
+
+When a problem surfaces **after** a merge, `/hula-revert` (or `hula revert`) is
+the safe inverse of `/hula-approve`. Give it the merged branch name, a PR number
+(`42`, `#42`, or a PR URL), or a commit SHA:
+
+```bash
+hula revert fix/issue-42-button      # open a Revert PR for review
+hula revert #312 --merge             # revert PR #312 and land the revert now
+hula revert a1b2c3d --dry-run        # show what would happen, change nothing
+```
+
+It resolves the merged PR, reverts it on a **new** `revert-<branch>` in an
+**isolated worktree** (your working tree is never touched), opens a
+`Revert "<title>"` PR, reopens the issue the merge closed (so it can be
+re-fixed), and recreates the deleted feature branch. It **never** resets or
+force-pushes. Flags: `--merge` (squash-merge the revert PR), `--dry-run`,
+`--pr <n>` (disambiguate a reused branch), `--continue` (resume after resolving
+conflicts), `--json`.
 
 ## Error Watchers
 
@@ -248,6 +445,47 @@ individually) that simply carries a shared `groupId`. Grouping and
 `--show-group` require a **hula-server with feature-group support**; against an
 older server launches still succeed but stay ungrouped and `--show-group`
 returns a not-found message.
+
+## Launch from an existing issue or PR
+
+Open-source work usually starts from an issue someone else filed, or from a pull
+request that already exists. Instead of writing a plan from scratch, point
+`hula launch` at the GitHub source and it builds the plan from the issue or PR
+text for you:
+
+```bash
+# Take on an existing issue. Branch `issue-42`, plan generated from the issue,
+# and the resulting PR links back with `Closes #42`.
+hula launch --issue 42
+
+# Continue an existing pull request in THIS repository. The work happens on the
+# PR's own head branch and new commits are added on top of what's already there.
+hula launch --pr 17
+
+# Open the PR into a non-default base branch (cuts the work branch from it too).
+hula launch my-task plan.md --base develop
+```
+
+`--issue` and `--pr` accept a number (`42`), a `#`-number (`#42`), or a full
+GitHub URL (`https://github.com/<owner>/<repo>/issues/42`). With either flag the
+plan file is optional — pass one to use it as the instructions, or omit it to
+generate one. A single positional is always the **tracking name**, never a plan
+path.
+
+| Flag               | What it does                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------ |
+| `--issue <ref>`    | Work on an existing issue (number, `#number`, or URL). Never creates or edits the issue.          |
+| `--pr <ref>`       | Continue an existing same-repo pull request. Commits the plan to its head branch; fork PRs are rejected. |
+| `--base <branch>`  | Cut the work branch from `<branch>` and open the PR into it (default: the repository default branch). |
+
+The same sources work from your coding agent, with a planning step first:
+`/hula-plan --issue 42 <extra instructions>` or `/hula-plan --pr 17 <what to
+change>` reads the issue or PR, drafts and validates a plan from it, and the
+launch that follows carries the `--issue` / `--pr` flag through.
+
+These flags require a **hula-server with launch-from-existing support**; an
+older server ignores the extra fields, so the run still starts but the issue/PR
+linkage is dropped.
 
 ## Demo
 

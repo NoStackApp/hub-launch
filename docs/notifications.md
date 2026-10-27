@@ -44,6 +44,11 @@ Every non-Slack URL receives a JSON body with the raw event fields — including
 `verifyScore`, `verifyReason`, and a `logTail` on failures. Point it at
 Discord (via a relay), ntfy, n8n, Pipedream, or your own endpoint.
 
+PR-ready events also carry a `mergeAssessment` object: `{ confidence, verdict,
+threshold, categories, concerns, endUserSteps, … }` — the same merge-safety
+assessment `hula approve` gates on and `hula info --verify` prints. `confidence`
+is 0–100 (or `null`) and `verdict` is `ready`/`review`/`blocked`/`unavailable`.
+
 ## Telegram
 
 Telegram has no incoming-webhook URL you can paste directly — its Bot API
