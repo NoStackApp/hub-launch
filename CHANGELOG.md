@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.42.0] - 2026-10-27
+
+### Added
+
+- Install `hula` without Node: `curl -fsSL https://hublaunch.site/install.sh | sh` downloads a standalone binary for your platform from the latest stable release of [NoStackApp/hub-launch](https://github.com/NoStackApp/hub-launch/releases) and verifies it against the release's `SHA256SUMS` (a mismatch aborts and removes the download). It installs to `~/.hublaunch/bin` (override with `HULA_INSTALL_DIR`; never uses sudo) and also installs the global Claude Code slash commands. `npm install -g hub-launch` remains available for Node users. The binaries are currently unsigned, so macOS or Windows may ask you to allow them once.
+- `hula update` on a curl-installed binary now updates the binary itself. It downloads the matching binary from the latest stable release, verifies it against `SHA256SUMS`, replaces itself atomically and refreshes the slash commands; it exits cleanly when already up to date. `--manager` forces the npm/pnpm path. A standalone binary's update notice now reads those releases instead of npm.
+- `hula install-claude-commands` installs or refreshes the global Claude Code slash commands (`~/.claude/commands/hula-*.md`). This is the step the npm package's postinstall performs, available for installs that have no postinstall.
+- `hula credentials sync` and the automatic credential sync now name the env vars they stored (names only, up to 8, then `+N more`) or say `no env vars`. They also warn when a sync forwards none: such a sync clears previously stored env vars, and dashboard/phone launches and the sandbox `beforeLaunch` hook only see forwarded variables. The warning lists which stored env vars the sync removed.
+
+### Changed
+
+- Dashboard and phone launches, and retries of CLI-started plans, use your current `default` credential set. Run `hula credentials sync` after changing `envVars` or rotating a token.
+- A missing `@playwright/test` now prints install guidance instead of a raw module-not-found error (browser launcher and preview).
+
+### Fixed
+
+- HubLaunch runs no longer commit the sandbox runtime files `.hublaunch/.current-stage` and `.hublaunch/.metrics-cpu` into feature branches. `hula init` adds them to `.gitignore` and, when they are already tracked, prints the `git rm --cached …` command to untrack them.
+
+### Documentation
+
+- The README and docs lead with the curl install, including a download-review-run variant, and list npm/pnpm as the Node alternative. Node.js ≥ 18 is now listed as required only for the npm install.
+
 ## [1.41.0] - 2026-10-22
 
 ### Added
