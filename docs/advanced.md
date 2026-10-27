@@ -418,6 +418,10 @@ happen remotely, so they do **not** run the local `afterMerge` hook and do
 **not** fast-forward your local `main`. Run `hula approve` later (it will see the
 PR already merged) or `git pull --ff-only` to catch your local checkout up.
 
+The `afterRevert` hook — the symmetric rebuild counterpart of `afterMerge`, run
+by `hula revert --merge` after it squash-merges the revert PR — is likewise
+**local only**: a server-side auto-merge of a revert PR does not trigger it.
+
 ## Cross-platform, low-footprint tooling
 
 The workflow scripts and instruction documents that power the Agent Skills ship
