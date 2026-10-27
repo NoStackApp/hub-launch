@@ -7,6 +7,130 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.41.0] - 2026-10-22
+
+### Added
+
+- Backlog sync is now two-way and visible from any machine. `/hula-approve` pulls the plan's backlog from the dashboard, merges it into the chat's file, pushes back anything completed locally, and prints the open items in a **suggested execution order** — the smallest independent item first, with blocked items listed separately (`blocked by <n>`) and an origin tag for items that came from the dashboard or another session. New `hula script backlog-pull` (push + pull + merge + status push-back) and `hula script backlog-list` (print the backlog as JSON from the local file, the server, or both). `/hula-help backlog [<trackingName>]` shows this chat's — or any plan's — backlog in the same order, including on a fresh checkout with no local file, and `/hula-followup` prints the same block before its questions.
+- Plans started in a local `/hula-plan` chat are now fully usable from the HubLaunch dashboard. `hula plan context`, `answer`, `understanding` and `plan-text` accept `--local`, which `/hula-plan` now passes on every sync: the write is rejected once the plan has been continued on HubLaunch, and `answer`/`understanding`/`plan-text` refuse to overwrite an answer already given on the dashboard and report any `dashboardAnswers` in their JSON so the chat can pick them up. Questions synced from `/hula-plan` can mark a recommended option (shown as ⭐ on the dashboard), and `/hula-followup` now resumes local-chat plans as well as remote ones, asking only the questions still unanswered.
+
+### Fixed
+
+- `hula view` and interactive mode now show the lifecycle stage the server derives. The CLI dropped the server's `stage` and `archived` fields and guessed a stage from the tracking status, so failed plans read as `ready`, completed plans stayed in the active list, and `--stage completed` matched nothing. The Archive view (`hula view --archived`, the interactive Archive toggle) also only searched the active list; it now fetches archived plans and plans whose issue is closed (a merged PR closes its issue), so completed and archived plans actually appear there. The stage table now mirrors the server's 14 stages, so `failed` (❌), `backlogBlocked` (📌 open backlog: PR merged, backlog items still open) and `failedMerge` (🚨 deploy failed) sort and render properly instead of as `⚪` raw names.
+- A plan-list request whose connection dropped after the server had answered failed with the meaningless `API error: 200`. It is now reported as a dropped connection, and the plan list (used by `hula view`, interactive mode and the Archive view) retries it up to twice.
+- Backlog items silently never reached the server in repos configured with `hulaApiKey` but no `hulaProjectUrl` — the normal state after `hula init`. The backlog scripts now default the server URL exactly as every command does, so sync works whenever an API key is present, and a skipped sync says why on stderr and in its JSON (`skipped: <reason>`).
+- A server 500 is no longer reported as "temporarily unavailable". The CLI now says the server hit an internal error, and includes the server's error message (when it gives one) and the request id, so failures can be traced.
+
+## [1.40.0] - 2026-10-21
+
+### Added
+
+- The remote planning agent now marks a clearly best answer on clarifying questions. The `plan-initiate` instruction template describes the `{ "text": "...", "recommendation": "recommended" | "strongly" }` option shape and when to use it (at most one option per question, only when a better answer genuinely exists, never on the two fixed-format questions); the dashboard renders those options as `⭐ (recommended)` / `⭐ (strongly recommended)`, and the stored answer stays the clean option text. The server's follow-up policy for later question rounds carries the same instruction. (#788)
+
+### Fixed
+
+- `hula launch --test` is accepted again. The option had been commented out while the server, `hula script launch-run --test`, the `hula-launch` skill and `docs/commands.md` still supported it. It swaps the real Claude CLI for the sandbox's baked-in mock, so a full queue → sandbox → PR → webhook run completes in minutes at no LLM cost (used by hula-server's `/hula-e2e` smoke suite).
+
+## [1.39.0] - 2026-10-20
+
+### Added
+
+- `hula revert <target>` and the `/hula-revert` skill: the safe inverse of `hula approve` for a problem that surfaces after a merge. `<target>` is a merged branch name, a PR number (`42`, `#42`, or a PR URL), or a commit SHA. It resolves the merged PR, reverts it on a new `revert-<branch>` in an isolated worktree (your working tree is never touched), opens a `Revert "<title>"` PR, reopens the issue the merge closed, and recreates the deleted feature branch. It never resets or force-pushes. Flags: `--merge` (squash-merge the revert PR now), `--dry-run`, `--pr <n>` (disambiguate a reused branch), `--continue` (resume after resolving conflicts), `--json`.
+- `hula archive [issueNumber]` (`--unarchive` to reverse): a soft close that keeps the plan record. The server moves the plan to the `archived` lifecycle stage and closes its GitHub issue, but the plan stays visible in the Archive view. Unlike `hula close`, it does not remove the plan from tracking. Against an older server the command reports a clear "server does not support archiving" error.
+- Every plan now has a single **lifecycle stage** on one ordered axis from creation to retirement (`backlog → QUESTIONS → UNDERSTOOD → GENERATE_PLAN → LAUNCHED → initialWaiting → waiting → ready → completed → archived`). `hula view` and the interactive list sort earliest-stage-first with priority as the within-stage tiebreaker; `completed` (all PRs merged, backlog done, deploy succeeded) and `archived` plans are hidden from the active list. The canonical stage comes from hula-server; the CLI derives a best-effort stage from local tracking status when talking to an older server.
+- `mergePolicy` config key (`hublaunch.config.js`): `{ minConfidence, autoMerge }` declares the merge-confidence gate for the repo. `minConfidence` (integer 0–100, server default 90) is the lowest-category score a PR must reach to be `ready`; `autoMerge` (default false) opts into server-side auto-merge of `ready` PRs. The value is forwarded to the server on every `hula launch` and wins over the dashboard setting field by field. See [Merge policy](docs/advanced.md#merge-policy). Omitting it keeps the previous behavior.
+- `hula info <name> --verify` prints the PR's merge assessment — confidence, verdict, the five category scores, concerns, and recommended end-user test steps — then the full JSON. `--raw` prints a single compact JSON line for scripts; it is never opened in an editor. Composes with the other info keys (K ≥ 2 → combined JSON).
+- `hula view` now prints a `Confidence: 87 · review` line per plan when the server provides a merge confidence (`Confidence: — (unavailable)` for an unavailable verdict; nothing on servers that don't produce one).
+- `hula approve --force`. Before merging, `hula approve` reads the PR's stored merge assessment and, when the verdict is not `ready` (or no assessment exists), prints the concerns and end-user steps and asks to confirm (interactive) or exits with code 3 (non-interactive). `--force` skips the prompt / overrides the gate. The threshold used is the assessment's own frozen value, never a local recomputation. PR-ready notifications now also carry the `mergeAssessment` object.
+
+### Changed
+
+- A plan whose planning job is still in flight (raw stage `INITIATED` / `GATHER_INFO`) is now shown as `analyzing` 🔍 (rank 0) instead of the misleading `backlog`. `backlog` (rank 1) is kept for dormant/legacy post-launch plans. The lifecycle is now 11 stages; `hula view` sorts `analyzing` first.
+- `/hula-approve` prompts before merging a low-confidence PR. Both merge scripts (`approve-local`, `approve-remote`) take `--force` and, on a below-threshold gate (exit 3), emit `{"status":"error","code":"below_threshold","message":…,"assessment":{…}}` so the skill can show the concerns and end-user steps and ask the user before re-running with `--force`.
+
+### Fixed
+
+- `hula launch --show <name>` printed `No job found` for every task: the CLI read a legacy `jobStatus` / `jobPid` / … payload, but `GET /api/v1/ralph-run/:issueName/status` returns the task row (`status`, `pid`, `startedAt`, `completedAt`, `exitCode`, `workerHost`, `startedBy`, `planPath`, `heartbeatStale`, `mergeAssessment`). `--show` now reads that shape (the legacy one is still accepted), flags a stale heartbeat, and prints the stored merge confidence/verdict when the server has one.
+- `hula view` is registered again. It is documented and maintained (stage ordering, confidence line), but had been dropped from the command list, so `hula script fix-setup` (used by `/hula-fix`) always failed with "Issue #N is not tracked. Run: hula track N" — and `hula track` is not a command either. `fix-setup` now reports a failing `hula view` as its own error (exit 2) instead of "not tracked", and its hints point at `hula launch --issue <n>` rather than the removed `hula track` / `hula checkout` commands (same change in the `/hula-fix` skill table and the bash twin script).
+- `hula plan context` now splits a plan-initiate-layout document itself, sending the `## Assessment` body as the assessment, the fenced json in `## Questions` as the clarifying questions (`question` → `questionText`), and the remaining sections as the context — the same split the server does in remote mode. In local planning mode the questions were never uploaded, so every later `hula plan answer <planId> --file …` failed with `Resource not found`. Explicit `--assessment-file` / `--questions` still win, and a malformed questions block exits 1 with `Invalid questions JSON in ## Questions`.
+- API errors from HubLaunch now show the server's own text. The planning routes return `{ error }`, which the client ignored in favour of a generic message (`Resource not found`, `Resource already exists`, …); every status branch now prefers `error`, then `message`, then the generic fallback.
+- `hula script fix-setup` and `hula script verify-gather` resolved the wrong PR for an issue: both used `gh pr list --search "linked:<n>"`, but `linked:<number>` is not a valid GitHub search qualifier, so the list was unfiltered and the scripts picked the newest open PR instead of the one that references the issue (a fix session could be created on an unrelated branch). PR resolution is now deterministic — it uses GitHub's own linked-PR data (`gh issue view … --json closedByPullRequests`) and falls back to scanning open-PR bodies for a closing keyword (`Fixes`/`Closes`/`Resolves #N`). `fix-setup` only accepts an open PR (it must check the branch out), fails loudly with `No PR found for issue #N …` when nothing matches, and now verifies the specific issue number is tracked.
+- `hula init` no longer tells you to write `.hublaunch/goals.md` when the project already has one. The "Next steps" tip is printed only when the file is missing, or, with different wording, when it exists but is empty.
+
+## [1.37.0] - 2026-10-16
+
+### Added
+
+- `hula login` reuses the GitHub login already stored on the machine. Logging into a second project no longer opens the browser or asks for a device code: when a valid GitHub token is saved (for example after logging into another repo), login prints `🔑 Using your saved GitHub login` and skips straight to the HubLaunch exchange, so `hula init` in another project finishes in one step. If the stored token is expired or rejected by HubLaunch, login falls back to the browser device flow automatically. Pass `hula login --fresh` to force the browser flow, for example to switch GitHub accounts.
+- Credentials are synced at the end of `hula login`. When the project has `saveCredentials: true` and a provider key is already configured, a successful login (including the one chained from `hula init`) immediately saves the project's `default` credential set to HubLaunch, so the dashboard and the phone PWA can plan right away instead of waiting for the first `hula launch`. If no provider key is configured yet, login says the credentials will be saved on the first launch instead. The sync is best-effort and never fails the login.
+
+### Changed
+
+- The GitHub token refresh logic now lives in a shared `github-token-refresh` utility used by both `hula login` and the GitHub CLI helpers, so a stale stored token is refreshed the same way everywhere.
+- The bundled `.agents/skills` are refreshed: new `hula-assess` and `hula-followup` skills, `hula-plan` gains the remote-by-default planning mode with `--local` / `--remote` flags, and `hula-help` documents `hula update`, `saveCredentials` and `.hublaunch/goals.md`. The repo also ships a committed `.hublaunch/goals.md` describing the project's goals and non-goals.
+
+## [1.36.0] - 2026-10-15
+
+### Added
+
+- Stored credential sets now carry your update-notification settings. When `saveCredentials` is on, `hula launch` (and `hula credentials sync`) include the effective `updateNotificationUrl` and `updateNotificationNameTag` (CLI flag → config → env) in the `default` credential set saved to HubLaunch, so a launch started from the dashboard or the phone PWA fires the same Slack/webhook notification a CLI launch does. Both values are stored non-secret and shown verbatim by `hula credentials list` in two new columns, `NOTIFY URL` and `NOTIFY TAG` (`—` when unset). The fields are omitted when unset and read defensively, so against an older hula-server that ignores them the sync still reports `synced` and the columns show `—`.
+
+### Fixed
+
+- A failed credential sync is now printed as a red error line on stderr. `hula credentials sync`, `hula init web`, and the automatic sync after `hula launch` previously printed "🔐 Credentials not saved: …" through the normal info logger, so an expired API key or an unreachable server blended into the surrounding output. A successful sync is unchanged, and `hula plan` keeps writing the plain line to stderr for the AI harness.
+
+## [1.35.0] - 2026-10-14
+
+### Added
+
+- CLI self-update. `hula update` upgrades `hub-launch` with whichever package manager installed it (pnpm or npm, auto-detected; override with `--manager pnpm|npm`), always running the install from your home directory so a repo that pins a different `packageManager` can't redirect the global bin dir. It then guarantees the global Claude Code slash commands are refreshed — if pnpm's build-approval gate blocked the package's postinstall, it runs it directly and reminds you to `pnpm approve-builds -g` so future updates refresh automatically — and prints the new version. `hula update --check` reports whether an update exists (exit 0 up to date, 2 available) without installing.
+- Update notice. Interactive, non-fast-path commands now print a one-line `⬆️  hub-launch <latest> is available …` notice at the end when a newer version is on npm, checked at most once per day (cached in `~/.hublaunch/update-check.json`). The check is skipped entirely on non-TTY output and on the JSON/instruction fast-path commands (`script`, `instructions`, `plan`, `session-hook`), so parsed output is never touched. Set `HULA_NO_UPDATE_CHECK=1` to disable it (e.g. in CI).
+- Opt-in automatic updates. `hula login` and `hula init` ask once whether to keep the CLI up to date automatically; with it on, the update runs **after** your command finishes (never mid-command) and tells you what it did. Toggle any time with `hula update --auto on|off`. Stored per machine in `~/.hublaunch/settings.json`.
+
+## [1.34.0] - 2026-10-14
+
+### Added
+
+- Credential sync for web + phone planning. Opt in once (`saveCredentials: true`, asked by `hula init` and `hula login`, default yes) and every `hula launch` and `hula plan start|draft-and-launch` also saves the exact credential bundle it sends — your GitHub token, provider key and forwarded env vars — to HubLaunch as this project's `default` credential set, so the dashboard's New Plan wizard and the phone PWA can launch without uploading a `.env` or typing a token. `hula credentials sync` pushes without launching (always re-sending the current `gh auth token`, so a rotated GitHub token never goes stale) and `hula credentials list` prints a hint-only table of what the server holds. Turn it on or off any time with `hula init web` / `hula init web disable` (disabling also deletes the stored set from HubLaunch). Secrets are never printed — only hints (`ghp_…k3Q9`). The sync is best-effort: it runs only after a launch succeeds, never blocks or fails the command, and prints one short line. **Requires hula-server with the `/api/v1/credential-sets` endpoints; against an older server every path reports `server-unsupported` and nothing else changes.**
+
+### Changed
+
+- Remote planning now runs the honest assessment in the sandbox and `/hula-followup` handles the stop and goals questions. The `plan-initiate` pass runs `hula instructions assess` (the same rubric as local `/hula-plan`), pasting its output under `## Assessment`; when a category scores below 5 the first clarifying question is proceed / adopt the safer alternative / stop, and when `.hublaunch/goals.md` is absent the last question offers to save the inferred goals. `/hula-followup` titles the block by its overall score, stops cleanly on "Stop planning" (the plan stays resumable), and writes `.hublaunch/goals.md` in your checkout on approval with a commit reminder.
+
+## [1.33.0] - 2026-10-13
+
+### Added
+
+- Remote planning for `/hula-plan`. In Claude Code, `/hula-plan` now defaults to running its exhaustive repo analysis and clarifying-question derivation on the hula-server (for half a plan's credits): the session starts the plan, drops a one-line notice, and ends its turn, resuming automatically once the server has questions (or when the server finds none, reporting that it is drafting and launching on its own). After you confirm the understanding, you choose between planning locally (with approval before launch) or having HubLaunch draft and launch the plan automatically. A new `/hula-followup <planId>` skill resumes an in-flight remote plan from any checkout of the repo — answering the questions, storing the confirmed understanding, and running the local-or-remote choice — so a dead session loses nothing. `--local` forces today's all-local flow (also the default outside Claude Code and whenever `--pr` is used); `--remote` forces remote. Local planning now also backs up its context, questions, answers, understanding, and plan text to the dashboard on a best-effort basis. Implemented by a new `hula plan <start|wait|followup|answer|understanding|context|plan-text|draft-and-launch>` command group and two new sandbox instruction docs (`hula instructions plan-initiate`, `plan-generate`). **Remote planning requires hula-server with the `/api/v1/planning` endpoints; the server's sandbox image installs this package and requires ≥ 1.33.0 (the first release with `hula instructions plan-initiate`).**
+- Pre-releases: `scripts/release.sh rc` (or an explicit `x.y.z-rc.N`, also via `/hula-release`) cuts a GitHub pre-release from any branch without touching `CHANGELOG.md`, and `publish-to-npm.yml` publishes it under the npm `next` dist-tag so `npm install -g hub-launch` keeps resolving the last stable release. The workflow now refuses a version/release-kind mismatch (an `-rc.N` version on a normal release, or a stable version on a pre-release).
+- `/hula-assess <description | --issue n | --pr n>` and `hula instructions assess` — an honest 1–5 assessment of whether a requested change is a good idea for the project (not whether it can be built), scoring code integrity, project goals, security, compatibility, and maintenance burden. The overall verdict is the lowest category score; anything below 5 is explained with `file:line` evidence and paired with a concrete "Safer alternative". `/hula-plan` (local) now runs the same assessment inline, before its clarifying questions — a score below 5 makes the first question proceed / adopt the safer alternative / stop. Project goals are read from a new committed file `.hublaunch/goals.md`; when it is absent, goals are inferred from the README and docs and the skill offers to write the file. Read-only and chat-only — nothing is posted to GitHub.
+
+### Fixed
+
+- `hula launch` could hang until its timeout ("Request timed out") with the request never reaching the server. The launch POST reused an idle keep-alive connection from the subscription check a few seconds earlier, which the server side was closing at the same moment. Launch and kill requests now open a fresh connection.
+
+## [1.32.0] - 2026-10-09
+
+### Fixed
+
+- `hula launch` waits up to 120s for the server to accept a launch (was 30s, shorter than the server's own limit, so a slow or cold server dropped launches). A timeout now says the launch may still have been queued and how to check.
+- `--pr <n>` on an issue number now says "#n is an issue, not a pull request. Use --issue n instead." rather than "not found", and `--issue` / `--pr` lookups no longer print the raw `gh api` failure before the clean error.
+- Billing refusals from `hula launch` no longer offer a free trial to accounts that can't take one. An exhausted credit balance (the server's 402 with `buyCreditsUrl`) now says "Buy more credits"; a free trial is offered only when the server reports the account never subscribed; an unknown status gets neutral wording. The closing line no longer claims Pro allows unlimited launches.
+
+## [1.31.0] - 2026-10-08
+
+### Added
+
+- `hula launch --issue <ref>`, `--pr <ref>` and `--base <branch>` — launch directly from an existing GitHub issue or pull request. `--issue` takes on an open issue (branch `issue-<n>`, plan generated from the issue text, PR linked with `Closes #N`); `--pr` continues an open same-repo pull request on its own head branch (fork PRs are rejected); `--base` cuts the work branch from, and opens the PR into, a non-default branch. Both `--issue` and `--pr` accept a number, `#number`, or a full GitHub URL, and the plan file becomes optional (generated from the GitHub text when omitted). Requires a hula-server with launch-from-existing support; an older server ignores the new `issueNumber` / `prNumber` / `headBranch` / `baseBranch` request fields, so the launch still runs but the linkage is dropped.
+- `/hula-plan --issue <n>` and `/hula-plan --pr <n>` — plan from an existing issue or same-repo pull request. The skill reads the issue or PR (read-only), drafts and validates the plan from it, defaults the name to `issue-<n>` / `pr-<n>`, and emits a `<!-- hula-source -->` comment so the Launch Offer and `/hula-launch` pass `--issue` / `--pr` to the launch. `hula script launch-run` now forwards `--issue`, `--pr` and `--base` to `hula launch` and reports `prNumber` in its JSON.
+- Per-repo `sandboxProfile` in `.hublaunch` config (`{ type: base|android, jdk?: 17|21 }`) to select the Android sandbox image (JDK 17/21, Android SDK, fastlane). `hula init` asks "What does this project build?" once — only when no `sandboxProfile` is set — preselecting `android` when a Gradle/Android project is detected, and warns when an Android profile pins `containerResources` below 4 vCPU / 8 GiB. `hula launch`, `hula schedule` and `hula error-watcher --create` send the configured profile, and `--sandbox-profile base|android|android:17|android:21` overrides it per task. The `base` profile is omitted from request bodies, so existing payloads are unchanged.
+- `hula login --invite <code>` — apply an open-source program invite at login. When the server grants the program, the CLI reports the Pro period and its end date; a code that wasn't applied (already used, expired, or the account already has Pro) produces a warning instead of a silent login.
+- Chat-scoped backlog: `/hula-plan`, `/hula-fix` and `/hula-approve` now keep a per-chat list of out-of-scope items that surface mid-conversation, stored in `.hublaunch/.backlogs/<key>.json` via the new `hula script backlog-init` and `backlog-add` scripts. The session hook records the real Claude Code session id on each backlog file for provenance. When `hulaApiKey` / `hulaProjectUrl` are configured, items are pushed to hula-project (best-effort, non-blocking — the local file stays the source of truth), and the new `hula script backlog-resync` retries unsynced items. `/hula-approve` ends by listing the chat's open backlog items with a suggested next action for each.
+
+### Fixed
+
+- `hula launch`: the "Track it" link now points at the server the task was launched on, instead of always linking to the production dashboard — preview and self-hosted launches now open the right place.
+
 ## [1.30.0] - 2026-09-18
 
 ### Fixed
