@@ -418,6 +418,62 @@ happen remotely, so they do **not** run the local `afterMerge` hook and do
 **not** fast-forward your local `main`. Run `hula approve` later (it will see the
 PR already merged) or `git pull --ff-only` to catch your local checkout up.
 
+The `afterRevert` hook — the symmetric rebuild counterpart of `afterMerge`, run
+by `hula revert --merge` after it squash-merges the revert PR — is likewise
+**local only**: a server-side auto-merge of a revert PR does not trigger it.
+
+## PR-hygiene defaults (`defaults`)
+
+HubLaunch ships five mode-independent **PR-hygiene behaviours** that a careful
+contributor — and a careful maintainer — always wants. They are **on by default
+for every launch**, no opt-in required. The `defaults` block in
+`hublaunch.config.js` lets you opt any of them out, one behaviour at a time:
+
+```js
+defaults: {
+  styleSurvey: true,            // survey the repo's idioms and match the majority style
+  scopeLock: true,              // touch only the files the fix needs — no drive-by changes
+  contributingDocs: true,       // read and obey CONTRIBUTING.md and any PR template
+  environmentFailureOnce: true, // record an un-runnable env failure once, don't loop on it
+  windowsSafeNames: true,       // Windows-safe plan filenames (hyphen, not ":")
+},
+```
+
+- **`styleSurvey`** — before writing new logic, the agent surveys the codebase's
+  dominant idioms (lookup tables vs `switch`, early-return vs nesting, error
+  handling, test structure, naming) and writes in the **majority** style even
+  when an issue sketches it differently, explaining any departure in one PR-body
+  sentence.
+- **`scopeLock`** — edits are restricted to the files the fix needs: no drive-by
+  refactors, dependency bumps, reformatting, or unrelated fixes.
+- **`contributingDocs`** — the agent reads `CONTRIBUTING.md` and any PR template
+  and honours them: DCO sign-off (`git commit -s`), a required CLA,
+  "discuss in an issue first" rules, and the changelog policy (contributor-edited
+  vs maintainer-only).
+- **`environmentFailureOnce`** — when the regression step fails for a diagnosed
+  environment reason the sandbox cannot satisfy (a missing system library like
+  `libnspr4.so`, no display for a GUI/browser test, or no root), HubLaunch
+  records it **once** as a factual "could not run, and why" note instead of
+  re-running and re-reporting it up to five times.
+- **`windowsSafeNames`** — generated plan/lessons filenames use
+  `YYYY-MM-DD-HH-MM-<slug>.md` (a hyphen between hour and minute). A `:` is an
+  invalid path character on Windows and breaks `actions/checkout` on
+  `windows-latest`. Already-committed colon-named plans keep resolving; nothing
+  is renamed.
+
+Every key is optional and defaults to `true`. An absent `defaults` block (the
+common case) means **all five are on**, so existing configs behave as if they
+had opted into every behaviour. The block is forwarded to the server on every
+`hula launch` and `hula plan start` and surfaced to the sandbox; a field left at
+`true` sends nothing, so legacy request bodies are byte-identical.
+
+### Reserved: `contributionMode`
+
+A `contributionMode` key (`true | false | "auto"`, default `"auto"`) is
+**reserved and validated now but has no effect in this release**. It is the seam
+for a future "contribution mode" (building PRs against someone else's repo from
+a fork). Setting it changes no behaviour yet.
+
 ## Cross-platform, low-footprint tooling
 
 The workflow scripts and instruction documents that power the Agent Skills ship
