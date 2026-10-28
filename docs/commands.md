@@ -211,6 +211,7 @@ Selected options:
 | `--kill` | Stop the in-flight task for this tracking name without relaunching. Needs only the branch name (no plan path); sends no credentials. |
 | `--kill-and-relaunch` | Cancel the in-flight task, reset stale state, and launch a fresh task. Requires a plan path, like a normal launch. |
 | `--test` | Run in test mode: the server runs the full production pipeline but swaps the real Claude CLI for a mock (fast E2E run). **A real GitHub PR is still created** — clean it up afterward. Requires Pro tier and valid credentials, exactly like a normal launch. |
+| `--contribution` | Guest contribution mode: squash to one commit, keep HubLaunch artifacts off the PR branch, and write a guest PR body. Overrides a `contributionMode: false` config. See [Contribution (guest) mode](./advanced.md#contribution-guest-mode-contributionmode----contribution). |
 | `--update-notification-url <url>` | Webhook URL POSTed by the server on every terminal task transition. Falls back to the `updateNotificationUrl` config field, then `HULA_UPDATE_NOTIFICATION_URL` env var. |
 | `--update-notification-name-tag <tag>` | Verbatim "initiated by" label in notifications; Slack mention markup (`<@U12345>`, `<!subteam^ID>`) pings. Falls back to `updateNotificationNameTag` config field, then `HULA_UPDATE_NOTIFICATION_NAME_TAG` env var. |
 
@@ -567,7 +568,7 @@ skills can parse one shape. You rarely run these by hand — the skills do.
 
 ```bash
 hula plan start --name <trackingName> (--prompt <text> | --prompt-file <path>) \
-  [--issue <n>] [--folder <sub>] [--local | --remote] [--test] [--handoff <user>]
+  [--issue <n>] [--folder <sub>] [--local | --remote] [--test] [--handoff <user>] [--contribution]
 hula plan wait <planId> [--interval <seconds>=20] [--max-minutes <n>=120] [--force]
 hula plan followup <planId>
 hula plan answer <planId> --file <json> [--local]
