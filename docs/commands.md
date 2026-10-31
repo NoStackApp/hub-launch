@@ -17,6 +17,7 @@ Complete reference for every hula CLI command.
 | `hula info`    | —     | View plan info (logs, diff, initial, lessons, verify, clientSessionId) |
 | `hula view`    | —     | List tracked plans with status, priority, PR, and merge confidence |
 | `hula archive` | —     | Archive a plan (close its issue, keep the record); `--unarchive` to reverse |
+| `hula explain` | —     | View or edit a plan's plain-language explanation; `--update "<text>"` to set, `--json` for scripts |
 | `hula update`  | —     | Upgrade hub-launch to the latest release (or `--check` / `--auto on\|off`) |
 | `hula credentials sync` | — | Save the current credentials to HubLaunch as the `default` set (web + phone planning) |
 | `hula credentials list` | — | List the credential sets stored on HubLaunch (hints only) |
@@ -211,6 +212,9 @@ Selected options:
 | `--kill` | Stop the in-flight task for this tracking name without relaunching. Needs only the branch name (no plan path); sends no credentials. |
 | `--kill-and-relaunch` | Cancel the in-flight task, reset stale state, and launch a fresh task. Requires a plan path, like a normal launch. |
 | `--test` | Run in test mode: the server runs the full production pipeline but swaps the real Claude CLI for a mock (fast E2E run). **A real GitHub PR is still created** — clean it up afterward. Requires Pro tier and valid credentials, exactly like a normal launch. |
+| `--contribution` | Guest contribution mode: squash to one commit, keep HubLaunch artifacts off the PR branch, write a guest PR body, and open the PR as a draft. Overrides a `contributionMode: false` config. See [Contribution (guest) mode](./advanced.md#contribution-guest-mode-contributionmode----contribution). |
+| `--link-guidelines` | Cite the Responsible Contribution Guidelines in the guest PR disclosure instead of the default product-free line. Overrides a `linkGuidelines: false` config. |
+| `--skip-wait` | Skip the `waitForMaintainerDays` waiting window for this launch. See [Contributing to others' repositories](./contributing-to-others.md#issueplan-split-disclosure-and-the-waiting-window). |
 | `--update-notification-url <url>` | Webhook URL POSTed by the server on every terminal task transition. Falls back to the `updateNotificationUrl` config field, then `HULA_UPDATE_NOTIFICATION_URL` env var. |
 | `--update-notification-name-tag <tag>` | Verbatim "initiated by" label in notifications; Slack mention markup (`<@U12345>`, `<!subteam^ID>`) pings. Falls back to `updateNotificationNameTag` config field, then `HULA_UPDATE_NOTIFICATION_NAME_TAG` env var. |
 
@@ -567,7 +571,7 @@ skills can parse one shape. You rarely run these by hand — the skills do.
 
 ```bash
 hula plan start --name <trackingName> (--prompt <text> | --prompt-file <path>) \
-  [--issue <n>] [--folder <sub>] [--local | --remote] [--test] [--handoff <user>]
+  [--issue <n>] [--folder <sub>] [--local | --remote] [--test] [--handoff <user>] [--contribution]
 hula plan wait <planId> [--interval <seconds>=20] [--max-minutes <n>=120] [--force]
 hula plan followup <planId>
 hula plan answer <planId> --file <json> [--local]
@@ -632,6 +636,39 @@ are separate commands; `close`'s behavior is unchanged.
 Archiving an already-closed/deleted GitHub issue still marks the plan `archived`
 and keeps the record. Against an older server that does not support archiving, the
 command reports a clear "server does not support archiving" error.
+
+## `hula explain`
+
+View or edit a plan's **plain-language explanation** — a short, top-down summary
+of what problem the plan solves and how it solves it ("The problem" / "The fix"),
+aimed at a non-technical reader. The explanation is **stored on the plan**, so
+reads are instant and never call an AI. Any project member may edit it, at any
+stage (including launched plans).
+
+```bash
+hula explain                             # the current git branch's plan
+hula explain my-feature                  # by tracking name (or a plan id)
+hula explain my-feature --json           # machine-readable { planId, trackingName, simpleExplanation }
+hula explain my-feature --update "<text>"  # store the explanation
+```
+
+| Flag              | Description                                                      |
+| ----------------- | --------------------------------------------------------------- |
+| `--update <text>` | Store `<text>` as the explanation (truncated to 20,000 chars)   |
+| `--json`          | Emit JSON (used by the `/hula-explain` skill)                   |
+
+With no `target`, the plan is resolved from the current git branch (the branch
+name is the tracking name). `target` may be a tracking name or a plan id. When no
+explanation is stored, the read path says so (and `--json` emits
+`simpleExplanation: null`).
+
+The CLI is **pure storage** — it never calls an LLM. To *generate* a missing
+explanation, use the `/hula-explain` skill, which reads the plan, composes the
+two-part text, and persists it via `hula explain … --update`. A default
+explanation is also generated automatically when a plan is drafted (remote
+`plan-generate` and the local `/hula-plan` / `/hula-followup` / `/hula-create`
+flows), and, when present, is prepended as an "In plain terms" section to the
+GitHub issue and PR body at launch.
 
 ### Lifecycle stages
 
