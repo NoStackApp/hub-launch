@@ -299,6 +299,8 @@ they're there when you want them:
 | `/hula-fix`      | Fix a gap or bug on the PR branch in an isolated worktree — describe the problem     |
 | `/hula-verify`   | Full verification report, criterion by criterion (a summary score is auto-posted)    |
 | `/hula-info`     | Peek at a run: live logs, PR diff, initial summary, lessons                          |
+| `/hula-explain`  | Show (or generate) a plan's plain-language explanation — what problem it solves and how |
+| `/hula-status`   | Resume digest — what changed server-side (stage, PR/merge, deploy, archived) for this chat's plans since you last worked here |
 | `/hula-launch`   | Launch a plan manually (normally offered automatically after `/hula-plan`)           |
 | `/hula-confirm`  | Re-validate a plan you've edited by hand                                             |
 | `/hula-upload`   | Sync a plan to its feature branch or `origin/main` (normally automatic)              |
