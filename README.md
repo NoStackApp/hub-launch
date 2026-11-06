@@ -74,6 +74,14 @@ is available) it prints the concerns and recommended end-user test steps and
 asks you to confirm — pass `--force` to merge without the prompt. Set the
 threshold with [`mergePolicy`](./docs/advanced.md#merge-policy).
 
+The merge assessment is **never posted on the PR** — it lives on the dashboard,
+in `hula info`, and at this approve gate. Set
+[`prComments.mergeAssessment: 'final'`](./docs/advanced.md#pr-comments) to add a
+single short "Verified by HubLaunch" status line on your own-repo PRs at merge
+approval (never interim scores); the default `'never'` posts nothing. To remove
+assessment comments left on open PRs by older runs, use `hula assessments prune`
+(dry-run by default; `--yes` to delete).
+
 That's the whole loop. Everything between the two commands happens without you.
 
 ### Backlogs
@@ -91,6 +99,13 @@ show up back in your chat.
 - `/hula-approve` ends by printing the chat's open backlog in a **suggested
   order** — the smallest independent item first, with anything blocked by
   another item listed separately — each with a one-line next action.
+
+Agents have a backlog; so do you. **`hula todo`** lists your _user follow-ups_ —
+the things a person must do that the system noticed on its own runs (a missing
+local env var, a manual end-user check, an uncovered flow). They are ordered
+merge-blocking-first, scoped to you, and also surface on the dashboard ("User
+follow-through needed") and at the end of `hula info`. Run `hula todo --project
+owner/repo` to scope to one project, or `hula todo --done <id>` to tick one off.
 
 ## Why it's different
 
@@ -297,8 +312,12 @@ they're there when you want them:
 | ---------------- | ----------------------------------------------------------------------------------- |
 | `/hula-followup` | Answer a remote plan's questions from any checkout and finish planning (`/hula-followup <planId>`) |
 | `/hula-fix`      | Fix a gap or bug on the PR branch in an isolated worktree — describe the problem     |
-| `/hula-verify`   | Full verification report, criterion by criterion (a summary score is auto-posted)    |
+| `/hula-verify`   | Full verification report, criterion by criterion, displayed in chat (`--post` to add it to the PR) |
 | `/hula-info`     | Peek at a run: live logs, PR diff, initial summary, lessons                          |
+| `hula reassess`  | Recompute a plan's merge confidence from **all** its evidence (sandbox run + /hula-e2e + local + CI) and print the result (`hula reassess <trackingName>`) |
+| `hula todo`      | Your user follow-ups — per-person to-dos the system derived from its runs (`--project`, `--done <id>`) |
+| `/hula-explain`  | Show (or generate) a plan's plain-language explanation — what problem it solves and how |
+| `/hula-status`   | Resume digest — what changed server-side (stage, PR/merge, deploy, archived) for this chat's plans since you last worked here |
 | `/hula-launch`   | Launch a plan manually (normally offered automatically after `/hula-plan`)           |
 | `/hula-confirm`  | Re-validate a plan you've edited by hand                                             |
 | `/hula-upload`   | Sync a plan to its feature branch or `origin/main` (normally automatic)              |
@@ -313,6 +332,31 @@ they're there when you want them:
 Full details: [Commands Reference](./docs/commands.md) ·
 [Advanced Usage](./docs/advanced.md) (launch pipeline internals, resume,
 test mode, env forwarding, scheduling).
+
+## Contributing to someone else's repo
+
+HubLaunch isn't only for repos you own. In **contribution (guest) mode** it
+builds a pull request against a project you don't own — from your own fork,
+squashed to one commit, with HubLaunch's own artifacts kept off the branch and a
+guest PR body that discloses AI assistance. The upstream repo is never touched
+until you open the PR yourself with `hula submit-upstream`.
+
+`hula contribute` sets this up in one command: it forks the upstream, clones the
+**fork** (`origin` = fork, `upstream` = parent), writes a minimal guest config
+(`contributionMode: true`), and guides the GitHub-App install + `hula login`
+inside the clone.
+
+```bash
+curl -fsSL https://hublaunch.site/install.sh | sh   # or: npm install -g hub-launch
+hula contribute https://github.com/<owner>/<repo>
+```
+
+`hula login` requires **write** access on `origin`, which is why the command
+clones your fork (where you have write) rather than the read-only upstream.
+Installing the GitHub App on the fork is an interactive GitHub consent step, so
+the command opens the page and waits (and prints the remaining steps in a
+non-interactive run) rather than pretending to automate it. Full walkthrough:
+[Contributing to someone else's repository](./docs/contributing-to-others.md).
 
 ## Reverting a merged branch
 

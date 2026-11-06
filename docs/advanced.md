@@ -404,8 +404,8 @@ recomputes confidence locally) and gates on it:
     with --force to merge anyway.`
 
 Pass **`--force`** to skip the prompt / override the gate. The threshold shown
-is the assessment's own `threshold`, frozen at launch time, so the CLI and the
-PR comment always agree — not the current local config value.
+is the assessment's own `threshold`, frozen at launch time, so the gate uses the
+value in force when the PR was launched — not the current local config value.
 
 A repo that is not configured for a HubLaunch server skips the gate entirely
 (`ℹ️  No HubLaunch server configured — merge confidence not checked.`). Older
@@ -417,6 +417,221 @@ servers that don't produce an assessment report `unavailable` and prompt.
 happen remotely, so they do **not** run the local `afterMerge` hook and do
 **not** fast-forward your local `main`. Run `hula approve` later (it will see the
 PR already merged) or `git pull --ff-only` to catch your local checkout up.
+
+The `afterRevert` hook — the symmetric rebuild counterpart of `afterMerge`, run
+by `hula revert --merge` after it squash-merges the revert PR — is likewise
+**local only**: a server-side auto-merge of a revert PR does not trigger it.
+
+## PR comments
+
+The merge assessment is **HubLaunch-internal** — raw category scores, concerns,
+and the full verification report. It is **never posted on the PR**. Instead it
+lives in three reader-appropriate places:
+
+- the **dashboard** plan page,
+- **`hula info`** (and `hula reassess`),
+- the **`hula approve` gate** (described above).
+
+The only HubLaunch line a PR may ever carry about the assessment is an opt-in
+one-liner at merge approval, controlled by `prComments` in
+`hublaunch.config.js`:
+
+```js
+prComments: { mergeAssessment: 'never' }, // default
+```
+
+- **`mergeAssessment: 'never'`** (default, and the behaviour when the key is
+  absent) — nothing is posted on the PR in any mode.
+- **`mergeAssessment: 'final'`** — on your **own-repo** PRs, `hula approve` posts
+  exactly one short line after a successful merge:
+  `✅ Verified by HubLaunch — details on the dashboard: <link>`. It contains no
+  scores or categories, and is posted **only** at merge approval — never during
+  the run, on fix rounds, or on contribution (fork) PRs.
+
+The `<!-- hula-e2e-report v1 -->` harness comment (opt-in via `e2e.postReport`)
+is a separate, legitimate reader-facing artifact and is unaffected.
+
+### Removing old assessment comments — `hula assessments prune`
+
+Older runs used to post the full merge-assessment comment on the PR. To clean
+those up on a project's **open** PRs:
+
+```bash
+hula assessments prune                 # dry run — lists what it would delete
+hula assessments prune --yes           # actually delete
+hula assessments prune --project owner/repo --yes
+```
+
+It deletes **only** HubLaunch-authored `<!-- hula-merge-assessment v1 -->`
+marker comments, using the same `gh` credentials the rest of the CLI uses. Human
+comments and `<!-- hula-e2e-report v1 -->` harness comments are never touched.
+Dry-run is the default; `--yes` performs the irreversible deletion.
+
+## Grounding Loop (`groundingLoop` / `--groundUntil` / `--maxGroundingRounds`)
+
+An LLM can only honestly assess what has actually been executed. By default a
+launch produces exactly **one** merge-assessment snapshot. The **Grounding Loop**
+is an opt-in run mode (default **OFF**) that keeps grounding the assessment with
+newly-**executed** evidence until it earns a target confidence: each round names a
+concrete *testable* uncertainty, turns it into new `## End-to-End Test Cases`,
+runs them, ingests the results as evidence, and reassesses.
+
+Enable it per launch:
+
+```sh
+hula launch my-feature --maxGroundingRounds 3 --groundUntil 90
+```
+
+- **`--maxGroundingRounds <n>`** — integer `≥ 1`; the hard cap on grounding rounds
+  that **enables** the mode. Required to turn grounding on.
+- **`--groundUntil <0-100>`** — optional; the confidence to ground up to. When
+  omitted it defaults to the resolved merge-confidence threshold (see
+  [Merge policy](#merge-policy)).
+
+Out-of-range values exit non-zero with a clear range error. Config equivalent in
+`hublaunch.config.js` (the CLI flags override it, field by field):
+
+```js
+groundingLoop: { groundUntil: 90, maxGroundingRounds: 3 },
+```
+
+The block is `.strict()` — an unknown key or out-of-range value is a config error.
+**Precedence:** flag > project config > OFF. With neither present, the request body
+is **byte-identical** to a legacy launch.
+
+Each round targets the weakest assessment category that executed evidence can
+still move. The agent names concrete *testable* uncertainties behind that score and
+writes **one runnable shell check per case**, which the sandbox **executes**. Exit
+code 0 means pass. A timeout, a missing command, or a check that would pass
+regardless of the code (`true`, `exit 0`, echo-only, a trailing `|| true`) counts as
+no evidence.
+
+Because the agent writes these checks itself, a pass is treated as weak evidence and
+can raise only two things:
+
+- coverage of a criterion the plan actually lists;
+- a model-judged category, which the model re-scores from the executed results. The
+  re-score may raise the category only if every check in the round ran and passed.
+
+Passing checks never set the executed-verification tier or the e2e check. Those stay
+driven by your project's own regression and e2e commands. A **failing** check is
+strong evidence: it blocks the assessment, just as any other failed executed check
+does. The server scores every round with the same per-PR evidence aggregate that the
+final stored confidence uses.
+
+The loop stops when:
+
+- confidence reaches `groundUntil` (`threshold-reached`), checked before round 1
+  too;
+- a check fails, or one already failed before round 1 (`check-failed`);
+- no testable uncertainty can be named, nothing executes, a round does not move
+  the targeted category, or the weakest category is one that executing checks
+  cannot change (executed verification, or a category pinned by a deterministic
+  rule such as the related-test ratio) — all reported as `grounding-exhausted`;
+- the round cap is hit (`round-cap-reached`).
+
+The threshold and round-cap values come from the policy frozen at launch, and the
+server rejects a round number above the cap. Every executed check is listed in a PR comment so a reviewer can judge
+whether the checks were meaningful. Every round is recorded with its cost (credits
+plus measured sandbox minutes) and shown on the launched-plan dashboard next to the
+merge assessment, along with a pre-round-1 cost estimate. A per-run **credit
+budget** (`--groundingBudget`) is a planned follow-up. v1 enforces the round cap,
+the threshold and the diminishing-returns stop, and records each round's cost.
+
+## PR-hygiene defaults (`defaults`)
+
+HubLaunch ships five mode-independent **PR-hygiene behaviours** that a careful
+contributor — and a careful maintainer — always wants. They are **on by default
+for every launch**, no opt-in required. The `defaults` block in
+`hublaunch.config.js` lets you opt any of them out, one behaviour at a time:
+
+```js
+defaults: {
+  styleSurvey: true,            // survey the repo's idioms and match the majority style
+  scopeLock: true,              // touch only the files the fix needs — no drive-by changes
+  contributingDocs: true,       // read and obey CONTRIBUTING.md and any PR template
+  environmentFailureOnce: true, // record an un-runnable env failure once, don't loop on it
+  windowsSafeNames: true,       // Windows-safe plan filenames (hyphen, not ":")
+},
+```
+
+- **`styleSurvey`** — before writing new logic, the agent surveys the codebase's
+  dominant idioms (lookup tables vs `switch`, early-return vs nesting, error
+  handling, test structure, naming) and writes in the **majority** style even
+  when an issue sketches it differently, explaining any departure in one PR-body
+  sentence.
+- **`scopeLock`** — edits are restricted to the files the fix needs: no drive-by
+  refactors, dependency bumps, reformatting, or unrelated fixes.
+- **`contributingDocs`** — the agent reads `CONTRIBUTING.md` and any PR template
+  and honours them: DCO sign-off (`git commit -s`), a required CLA,
+  "discuss in an issue first" rules, and the changelog policy (contributor-edited
+  vs maintainer-only).
+- **`environmentFailureOnce`** — when the regression step fails for a diagnosed
+  environment reason the sandbox cannot satisfy (a missing system library like
+  `libnspr4.so`, no display for a GUI/browser test, or no root), HubLaunch
+  records it **once** as a factual "could not run, and why" note instead of
+  re-running and re-reporting it up to five times.
+- **`windowsSafeNames`** — generated plan/lessons filenames use
+  `YYYY-MM-DD-HH-MM-<slug>.md` (a hyphen between hour and minute). A `:` is an
+  invalid path character on Windows and breaks `actions/checkout` on
+  `windows-latest`. Already-committed colon-named plans keep resolving; nothing
+  is renamed.
+
+Every key is optional and defaults to `true`. An absent `defaults` block (the
+common case) means **all five are on**, so existing configs behave as if they
+had opted into every behaviour. The block is forwarded to the server on every
+`hula launch` and `hula plan start` and surfaced to the sandbox; a field left at
+`true` sends nothing, so legacy request bodies are byte-identical.
+
+## Contribution (guest) mode (`contributionMode` / `--contribution`)
+
+When HubLaunch builds a pull request on a **fork of someone else's** repository
+(you fork it, HubLaunch builds on the fork, a human reviews and opens the PR
+upstream), the maintainer-grade output HubLaunch produces on its *own* repos is
+unwelcome from a guest. **Contribution mode** makes the output acceptable from a
+guest. When engaged, a launch:
+
+- keeps **every HubLaunch artifact off the PR branch** — nothing under
+  `.hublaunch/` or `.claude/`, no `ralph.md`, `launch.md`, plan file, or lessons;
+- **squashes to a single commit** in the repository's own message convention
+  (Conventional Commits vs sentence case, auto-detected from recent history),
+  with a `Signed-off-by` trailer only when `CONTRIBUTING.md` requires a DCO — and
+  **never** an issue/PR number in the commit message or branch name;
+- never adapts the repo to the sandbox (no edits to test config, CI workflows,
+  lockfiles, or tool config to make the sandbox pass);
+- writes a **guest PR body**: a plain summary, the issue/PR reference, a
+  **Verification** section reporting only what actually ran (and what could not,
+  and why), and a short, product-free disclosure that the change was made with
+  AI assistance and reviewed by a person (`linkGuidelines: true` or
+  `--link-guidelines` cites the Responsible Contribution Guidelines instead) —
+  no "Generated by HubLaunch" banner, no ⚠️ warning boxes, no plan links;
+- opens the PR as a **draft**.
+
+```js
+// hublaunch.config.js
+contributionMode: false,   // true | false | "auto"  (default: false)
+```
+
+- **`false`** (the default this release) — contribution mode is off; output is
+  byte-identical to before this feature existed.
+- **`true`** — always engage the guest behaviours. Use this to opt in on any
+  repo, including your own.
+- **`"auto"`** — engage **only when the target repo is a GitHub fork** (a repo
+  with `fork: true` and a `parent`). The first time it engages automatically on
+  a given fork, HubLaunch prints a one-time notice. `"auto"` is fully implemented
+  and documented but is **not** the default yet; a future release flips the
+  default to `"auto"`.
+
+The **`--contribution`** flag on `hula launch` and `hula plan start` forces
+contribution mode on for that run, overriding a `contributionMode: false` config.
+
+The choice is resolved server-side: `"auto"` is resolved against the fork
+metadata the server already reads from `GET /repos/{owner}/{repo}`, so the
+worker only ever receives a resolved boolean. An off/absent `contributionMode`
+is omitted from the request body, so legacy launches stay byte-identical.
+
+See the guide [Contributing to someone else's repository with
+HubLaunch](./contributing-to-others.md) for the end-to-end flow.
 
 ## Cross-platform, low-footprint tooling
 
@@ -475,7 +690,12 @@ comment) owns one file:
       "origin": "local",         // "local" | "dashboard" | "other-session"
       "remoteStatus": "open",    // last-known server status for a synced item
       "pulledAt": "2026-10-11T01:00:00.000Z",
-      "doneAt": "2026-10-11T02:00:00.000Z"
+      "doneAt": "2026-10-11T02:00:00.000Z",
+      "type": "plan",            // "plan" | "local" | "note" | "external" (optional; default plan)
+      "detail": "# why\n…",      // optional markdown context
+      "blockedBy": [             // optional typed blocker refs
+        { "kind": "pr", "ref": "NoStackApp/hula-server#747" }
+      ]
     }
   ]
 }
@@ -485,6 +705,33 @@ The local file is the source of truth; remote sync is additive and best-effort �
 nothing in the backlog flow ever fails the calling skill. Fields beyond
 `id`/`text`/`status`/`createdAt` are optional, so files written by older CLI
 versions stay valid (`version` remains `"1.0"`).
+
+### Project-level items and states
+
+On the server, backlog items are **project-owned** (not tied to a single plan),
+so archiving a chat/session never loses them. A server item carries a richer
+state machine than the local file's `open`/`done`:
+
+- **`type`** — `plan` (the only launchable kind) · `local` · `note` · `external`.
+- **`status`** — `parked` → `ready` → `planned` → `done`, with `archived`
+  reachable from any state. A `plan` item with every `blockedBy` ref resolved is
+  `ready` (an orange "progress needed" dot in the dashboard) but **starts
+  nothing** on its own — launching is always explicit.
+- **`enabled`** — a `false` lever hides an item from default lists, the
+  plan-initiate offer, and anything an AI reads, without deleting it.
+- **`blockedBy`** — an ordered list of typed refs
+  `{ kind: 'plan'|'pr'|'item'|'issue', ref, resolvedAt? }`. PR/issue refs
+  (`owner/repo#N`), plan ids, and item ids auto-resolve when the HubLaunch App
+  observes them land **on installed repos**; external/uninstalled refs are
+  resolved by a manual tick in the dashboard.
+
+The REST/tRPC surface is **dual-accept**: it still takes legacy `open`/`done`
+(mapping them to `parked`/`done`) and returns a value older CLIs can read, so
+existing CLI versions keep syncing unchanged. Launch a `ready` `plan` item from
+the dashboard or with `hula backlog launch <itemId>`: it opens an editable
+prompt (prefilled from `text` + `detail`) and, on confirm, starts a remote plan,
+sets `launchedPlanId`, and moves the item to `planned`; the item becomes `done`
+when that plan merges.
 
 ### Dashboard sync
 
