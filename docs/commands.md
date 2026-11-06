@@ -12,11 +12,14 @@ Complete reference for every hula CLI command.
 | `hula create`  | —     | Create issue from plan file                                       |
 | `hula approve` | —     | Merge PR and clean up                                             |
 | `hula launch`  | —     | Trigger a launch job on hula-project server                       |
+| `hula contribute` | —  | Set up a fork clone to contribute to a repo you don't own (guest mode) |
 | `hula schedule` | —     | Trigger or schedule an execute-action (e.g. `--built-in harden`) |
 | `hula error-watcher` | — | Manage production Error Watchers (inbound error webhooks that auto-launch fix PRs) |
 | `hula info`    | —     | View plan info (logs, diff, initial, lessons, verify, clientSessionId) |
+| `hula reassess` | —    | Recompute a plan's merge confidence from all its evidence and print it |
 | `hula view`    | —     | List tracked plans with status, priority, PR, and merge confidence |
 | `hula archive` | —     | Archive a plan (close its issue, keep the record); `--unarchive` to reverse |
+| `hula explain` | —     | View or edit a plan's plain-language explanation; `--update "<text>"` to set, `--json` for scripts |
 | `hula update`  | —     | Upgrade hub-launch to the latest release (or `--check` / `--auto on\|off`) |
 | `hula credentials sync` | — | Save the current credentials to HubLaunch as the `default` set (web + phone planning) |
 | `hula credentials list` | — | List the credential sets stored on HubLaunch (hints only) |
@@ -122,6 +125,56 @@ first launch. See [Planning from the web or your phone](../README.md#planning-fr
 
 ---
 
+## `hula contribute`
+
+Set up a fork clone to contribute to a repository you **don't own** (guest /
+contribution mode), in one command.
+
+```bash
+hula contribute <owner/repo>                         # owner/repo form
+hula contribute https://github.com/<owner>/<repo>    # repo URL (with or without .git)
+hula contribute https://github.com/<owner>/<repo>/issues/42   # issue URL
+hula contribute <owner/repo> --dir ./my-clone        # clone into a specific directory
+hula contribute <owner/repo> --yes                   # non-interactive: print the remaining steps
+```
+
+The command:
+
+1. Resolves your GitHub login (a saved HubLaunch login, `GITHUB_TOKEN`, or the
+   browser device flow).
+2. **Stops if you already have push access** to the target and points you at the
+   normal owner setup (clone it, then `hula init` + `hula login`) — no fork
+   needed.
+3. Creates **or reuses** your fork of the upstream (best-effort enables Actions
+   and mutes the fork's notifications).
+4. Clones the **fork** into `./<repo>` (or `--dir`), with `origin` = your fork
+   and `upstream` = the parent repo.
+5. Writes a minimal guest `.hublaunch/hublaunch.config.js` (`contributionMode:
+   true`, the fork as `hulaProject`, the fork's default branch as
+   `uploadBranch`) and `.git/info/exclude` entries that keep HubLaunch artifacts
+   off the fork. It does **not** run full `hula init`.
+6. Guides the **GitHub-App install on the fork** and runs `hula login` inside
+   the clone. `hula login` requires **write** access on `origin`, which you have
+   on your fork but not on the read-only upstream — this is why the command only
+   ever clones the fork. Installing the App is an interactive GitHub consent
+   step: the command opens the page and waits (and, with `--yes` / no TTY,
+   prints the remaining steps instead).
+
+A second run reuses the existing fork and the existing clone directory
+(idempotent). From there, pick an issue → `/hula-plan` → launch (a draft PR on
+your fork) → review → `hula submit-upstream <trackingName>` to open the upstream
+PR.
+
+| Flag          | What it does                                                         |
+| ------------- | -------------------------------------------------------------------- |
+| `--dir <path>`| Directory to clone the fork into (defaults to `./<repo>`)            |
+| `-y, --yes`   | Non-interactive: skip the guided App-install/login and print the steps |
+
+See [Contributing to someone else's repository](./contributing-to-others.md) for
+the full lifecycle, AI-assistance disclosure, and maintainer etiquette.
+
+---
+
 ## `hula approve`
 
 Merge a PR, delete the branch, and update tracking.
@@ -211,6 +264,9 @@ Selected options:
 | `--kill` | Stop the in-flight task for this tracking name without relaunching. Needs only the branch name (no plan path); sends no credentials. |
 | `--kill-and-relaunch` | Cancel the in-flight task, reset stale state, and launch a fresh task. Requires a plan path, like a normal launch. |
 | `--test` | Run in test mode: the server runs the full production pipeline but swaps the real Claude CLI for a mock (fast E2E run). **A real GitHub PR is still created** — clean it up afterward. Requires Pro tier and valid credentials, exactly like a normal launch. |
+| `--contribution` | Guest contribution mode: squash to one commit, keep HubLaunch artifacts off the PR branch, write a guest PR body, and open the PR as a draft. Overrides a `contributionMode: false` config. See [Contribution (guest) mode](./advanced.md#contribution-guest-mode-contributionmode----contribution). |
+| `--link-guidelines` | Cite the Responsible Contribution Guidelines in the guest PR disclosure instead of the default product-free line. Overrides a `linkGuidelines: false` config. |
+| `--skip-wait` | Skip the `waitForMaintainerDays` waiting window for this launch. See [Contributing to others' repositories](./contributing-to-others.md#issueplan-split-disclosure-and-the-waiting-window). |
 | `--update-notification-url <url>` | Webhook URL POSTed by the server on every terminal task transition. Falls back to the `updateNotificationUrl` config field, then `HULA_UPDATE_NOTIFICATION_URL` env var. |
 | `--update-notification-name-tag <tag>` | Verbatim "initiated by" label in notifications; Slack mention markup (`<@U12345>`, `<!subteam^ID>`) pings. Falls back to `updateNotificationNameTag` config field, then `HULA_UPDATE_NOTIFICATION_NAME_TAG` env var. |
 
@@ -367,6 +423,62 @@ hula info my-feature --clientSessionId       # prints the launching session id (
 hula info my-feature --logs --diff           # prints a merged JSON object {logs, diff}
 hula info my-feature --logs --clientSessionId# prints merged JSON across both endpoints
 hula info my-feature --logs --raw            # prints the raw run log to stdout
+```
+
+> `--verify` prefers the **plan-level** merge assessment — the one recomputed
+> from the full evidence set (the sandbox run plus any `/hula-e2e`, local, or CI
+> results) — and prints the evidence sources that fed it. It falls back to the
+> per-run assessment when no reassess has run yet.
+
+---
+
+## `hula reassess`
+
+Recompute a plan's merge confidence from **all** of its recorded evidence and
+print the result. Each proof — the sandbox run, a `/hula-e2e` harness report, a
+local fix run, a CI result — is recorded server-side against the plan; this
+command folds the full set through the same scoring formula and returns the
+newest authoritative assessment.
+
+```bash
+hula reassess <trackingName>
+```
+
+The merge-confidence headline is the **proven share** of the plan's acceptance
+criteria ∪ its End-to-End Test Cases: `round(100 × proven / total)`, counting a
+criterion proven only when evidence executed at the live PR head covers it. The
+legacy heuristics (unresolved references, unplanned files, change size, docs,
+coverage-by-name, removed assertions) are **reviewer flags** — they never change
+the number. The only thing that caps it below threshold is showable test
+tampering. The printed `Basis` line and proof ledger show exactly what was
+proven, failed or unproven.
+
+| Flag              | Description                                            |
+| ----------------- | ------------------------------------------------------ |
+| `--raw`           | Print the recomputed assessment as one JSON line       |
+| `--execute`       | Verify on demand: refresh the PR head from GitHub and enqueue a verification-only run (check → build → regression → e2e → assessment) to re-earn the number without a code change |
+| `--url <url>`     | Hula server URL (overrides config)                     |
+| `--api-key <key>` | Hula API key (overrides config)                        |
+
+Trust rules (enforced server-side; the CLI never sends a confidence):
+
+- Evidence counts toward the score only when its commit SHA equals the PR head —
+  a stale/mismatched SHA is kept for provenance but never raises the number.
+- `local` results are capped at the moderate tier; a `sandbox` or CI end-to-end
+  pass at the PR head is the strong tier (full executed-verification credit).
+
+`hula reassess` posts to `POST /api/v1/plans/:id/reassess`; `--execute` posts to
+`POST /api/v1/plans/:id/verify`, which refreshes the PR head from GitHub and
+**enqueues a verification-only sandbox run** (check → build → regression → e2e
+cases → assessment, no coding session) through the normal queue so the number is
+re-earned from a fresh execution even when no code changed. Evidence is recorded
+via `POST /api/v1/plans/:id/evidence`. Against an older server without these
+routes the command reports that reassess is unsupported.
+
+```bash
+hula reassess my-feature            # recompute from stored evidence + provenance
+hula reassess my-feature --execute  # refresh the PR head, then recompute
+hula reassess my-feature --raw      # the full result as one JSON line
 ```
 
 ---
@@ -548,7 +660,7 @@ Backlog scripts (the per-chat, dashboard-synced backlog):
 | Script | What it does |
 | ------ | ------------ |
 | `backlog-init -- <key>` | Create the per-chat backlog file if absent (idempotent) |
-| `backlog-add -- <key> "<text>" [--project <o>/<r> --tracking-name <n>\|--issue <N>]` | Append an item; best-effort push to the dashboard |
+| `backlog-add -- <key> "<text>" [--project <o>/<r> --tracking-name <n>\|--issue <N>] [--type plan\|local\|note\|external] [--detail-file <path>] [--blocked-by kind:ref ...]` | Append an item; best-effort push to the dashboard. `--type` sets the item kind (default `plan`); `--detail-file` attaches markdown context (path validated under the repo root or OS temp dir); `--blocked-by` adds a typed blocker (repeatable; `kind` ∈ `plan\|pr\|item\|issue`, `ref` is `owner/repo#N` for pr/issue or a plan/item id) |
 | `backlog-resync -- <key> --project <o>/<r> (--tracking-name <n>\|--issue <N>)` | Retry the push for any unsynced items |
 | `backlog-pull -- <key> --project <o>/<r> (--tracking-name <n>\|--issue <N>)` | Two-way sync: push unsynced, merge the dashboard's items by `remoteId`, push back local `done` |
 | `backlog-list -- [<key>] [--project <o>/<r> (--tracking-name <n>\|--issue <N>)] [--all]` | Print the backlog as JSON — from the local file, the server, or both merged; `--all` includes done items |
@@ -556,6 +668,27 @@ Backlog scripts (the per-chat, dashboard-synced backlog):
 `backlog-list` works with a key alone (local file), a plan target alone (the
 server's items — e.g. from another machine), or both (pull then list). See
 [Advanced Usage → Backlogs](advanced.md#backlogs) for the file format and sync rules.
+
+### Project-level backlog (`hula backlog`)
+
+The backlog is **project-owned**: items survive chat/session archival and have a
+small state machine (`parked → ready → planned → done`, plus `archived`). The
+chat-scoped `backlog-*` scripts above still capture items during planning; the
+`hula backlog` command group is the human-facing view of the same project
+backlog, and the `/hula-backlog` skill drives it. Each subcommand prints one
+JSON object on stdout.
+
+| Command | What it does |
+| ------- | ------------ |
+| `hula backlog add --text "<item>" [--project <o>/<r>] [--type plan\|local\|note\|external] [--detail-file <path>] [--blocked-by kind:ref ...]` | Create a project-owned item (project defaults to the git remote) |
+| `hula backlog list [--project <o>/<r>] [--type <t>] [--status <s>]` | List the project's active items (disabled + archived hidden); flags filter by type/status. Surfaces a grooming line for `parked` items untouched 60+ days |
+| `hula backlog launch <itemId> [--project <o>/<r>] [--prompt "<text>"] [--yes]` | Launch a `ready` `plan` item: prints the prefilled prompt (text + detail); with `--yes` it starts a remote plan and links it back (`launchedPlanId`, status `planned`) |
+
+A `plan` item with every blocker resolved is `ready` (orange dot in the
+dashboard) but **starts nothing** on its own — Launch is always explicit. PR,
+issue, plan, and item blockers auto-resolve when the HubLaunch App observes them
+land on installed repos; external/uninstalled refs are resolved by a manual tick
+in the dashboard.
 
 ---
 
@@ -567,7 +700,7 @@ skills can parse one shape. You rarely run these by hand — the skills do.
 
 ```bash
 hula plan start --name <trackingName> (--prompt <text> | --prompt-file <path>) \
-  [--issue <n>] [--folder <sub>] [--local | --remote] [--test] [--handoff <user>]
+  [--issue <n>] [--folder <sub>] [--local | --remote] [--test] [--handoff <user>] [--contribution]
 hula plan wait <planId> [--interval <seconds>=20] [--max-minutes <n>=120] [--force]
 hula plan followup <planId>
 hula plan answer <planId> --file <json> [--local]
@@ -632,6 +765,39 @@ are separate commands; `close`'s behavior is unchanged.
 Archiving an already-closed/deleted GitHub issue still marks the plan `archived`
 and keeps the record. Against an older server that does not support archiving, the
 command reports a clear "server does not support archiving" error.
+
+## `hula explain`
+
+View or edit a plan's **plain-language explanation** — a short, top-down summary
+of what problem the plan solves and how it solves it ("The problem" / "The fix"),
+aimed at a non-technical reader. The explanation is **stored on the plan**, so
+reads are instant and never call an AI. Any project member may edit it, at any
+stage (including launched plans).
+
+```bash
+hula explain                             # the current git branch's plan
+hula explain my-feature                  # by tracking name (or a plan id)
+hula explain my-feature --json           # machine-readable { planId, trackingName, simpleExplanation }
+hula explain my-feature --update "<text>"  # store the explanation
+```
+
+| Flag              | Description                                                      |
+| ----------------- | --------------------------------------------------------------- |
+| `--update <text>` | Store `<text>` as the explanation (truncated to 20,000 chars)   |
+| `--json`          | Emit JSON (used by the `/hula-explain` skill)                   |
+
+With no `target`, the plan is resolved from the current git branch (the branch
+name is the tracking name). `target` may be a tracking name or a plan id. When no
+explanation is stored, the read path says so (and `--json` emits
+`simpleExplanation: null`).
+
+The CLI is **pure storage** — it never calls an LLM. To *generate* a missing
+explanation, use the `/hula-explain` skill, which reads the plan, composes the
+two-part text, and persists it via `hula explain … --update`. A default
+explanation is also generated automatically when a plan is drafted (remote
+`plan-generate` and the local `/hula-plan` / `/hula-followup` / `/hula-create`
+flows), and, when present, is prepended as an "Overview" section to the
+GitHub issue and PR body at launch.
 
 ### Lifecycle stages
 
