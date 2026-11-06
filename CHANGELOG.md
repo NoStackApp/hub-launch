@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`hula plan answer` hardens its follow-up round.** It normalizes each
+  `newQuestions` entry before sending it (text from `questionText` or the alias
+  `question`, a kept integer `order`, normalized `options`) and fails locally —
+  exit 1, no network call — on an entry with no text. Its JSON now prints
+  `unanswered` and, when the server returns them, the stored `newQuestions` with
+  the `order` HubLaunch assigned each follow-up (older servers omit the field).
+  The `/hula-plan` and `/hula-followup` skills now state the exact
+  `newQuestions` shape, the numbering rule, how to use the returned numbers, and
+  that over-cap follow-ups join the last of at most 3 rounds. Built with AI
+  assistance.
+
 ## [1.44.2] - 2026-11-05
 
 ### Added
