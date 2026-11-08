@@ -768,6 +768,7 @@ hula plan understanding <planId> --file <markdown> [--local]
 hula plan context <planId> --file <markdown> [--assessment-file <md>] [--questions <json>] [--local]
 hula plan plan-text <planId> --file <planPath> [--local]
 hula plan draft-and-launch <planId> [--test] [--handoff <user>]
+hula plan retry <planId>
 ```
 
 - **`start`** records a planning run. Mode is `--local` / `--remote`, or auto:
@@ -781,6 +782,19 @@ hula plan draft-and-launch <planId> [--test] [--handoff <user>]
   **`context`** / **`plan-text`** persist each planning artifact; and
   **`draft-and-launch`** hands the confirmed plan to the server to draft and
   launch automatically.
+- **`retry`** re-queues a failed plan job (most often a rejected
+  `plan-generate`) from the stored understanding, reusing the plan's stored
+  credentials. It refuses clearly (exit 1) when the plan is not in a retryable
+  state (e.g. already launched, or no failed task). When a `plan-generate` run
+  failed, its read record now carries the failure reason + output tail (shown by
+  `wait` and on the plan page), so you can see why before retrying.
+- **`answer`** accepts each follow-up in `newQuestions` with either
+  `questionText` or the alias `question` (and an optional `order`, `rationale`,
+  `options`); an entry with no text fails locally before any network call. Its
+  JSON prints `unanswered` (the plan's remaining unanswered questions) and, when
+  the server returned them, `newQuestions` with the stored `order` HubLaunch
+  assigned each follow-up — refer to follow-ups by those numbers. Over-cap
+  follow-ups join the last round (no error).
 - When `--file` is in the plan-initiate layout (H2 `Assessment` … `Questions`),
   **`context`** splits it itself: the Assessment body becomes `assessment`, the
   fenced json in `## Questions` becomes `questions`, and the rest is sent as
