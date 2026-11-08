@@ -27,7 +27,8 @@ Complete reference for every hula CLI command.
 | `hula credentials sync` | — | Save the current credentials to HubLaunch as the `default` set (web + phone planning) |
 | `hula credentials list` | — | List the credential sets stored on HubLaunch (hints only) |
 | `hula init web` | — | Enable web + phone planning and sync now (`hula init web disable` turns it off) |
-| `hula plan <subcommand>` | — | Remote-planning command group (used by `/hula-plan` and `/hula-followup`) |
+| `hula plan <subcommand>` | — | Remote-planning command group (used by `/hula-plan` and `/hula-followup`); includes `plan requeue <planId>` to rescue a stuck plan |
+| `hula task requeue <taskId>` | — | Requeue a stuck `queued` task whose queue entry was lost (free; never debits a credit) |
 | `hula script <name>` | — | Run a bundled cross-platform workflow script (used by the Agent Skills) |
 | `hula instructions <name>` | — | Print a bundled instruction doc (`planning`, `proceed`, `skill-creation`, `assess`, `plan-initiate`, `plan-generate`) |
 | `hula session-hook` | — | Claude Code PreToolUse hook that captures launch-session provenance |
@@ -405,6 +406,10 @@ the status endpoint `GET /api/v1/ralph-run/:name/status`.
   (header, category scores, concerns, end-user steps, then the full JSON). It is
   never opened in an editor. `--raw` prints a single compact JSON line. When the
   server has no assessment, prints `No merge assessment available for <name>.`
+  When the latest verification run failed **before** it could re-verify
+  (checkout / sandbox init / install), a `verification could not run: <reason>
+  (task <id>)` line is printed above the assessment and the confidence number is
+  left unchanged (never blanked). `--raw` then emits `{ assessment, verifyError }`.
 - **K == 1, `--clientSessionId`** → the session id (or `null`) is printed plain.
 - **K >= 2** → the requested keys are merged into one JSON object on stdout.
 - **K == 0** → error (exit 1). Pass at least one flag.
@@ -477,6 +482,16 @@ cases → assessment, no coding session) through the normal queue so the number 
 re-earned from a fresh execution even when no code changed. Evidence is recorded
 via `POST /api/v1/plans/:id/evidence`. Against an older server without these
 routes the command reports that reassess is unsupported.
+
+A verification-only run checks out the PR branch when it still exists. For a
+**merged plan whose branch was deleted** (`merge --delete-branch`) the run checks
+out **by commit sha** instead — the PR merge commit for a merged plan, else the
+stored PR head — so a merged plan can still be re-verified from the code on
+`main`. For such a plan, evidence recorded at **either** the stored PR head or
+the merge commit counts toward the number, and the basis names the commit as
+`proven n/m at <sha7> (merged as <sha7>)`. If the run fails before it can
+re-verify, `hula info --verify` surfaces `verification could not run` and the
+number is left unchanged.
 
 ```bash
 hula reassess my-feature            # recompute from stored evidence + provenance
@@ -768,6 +783,8 @@ hula plan understanding <planId> --file <markdown> [--local]
 hula plan context <planId> --file <markdown> [--assessment-file <md>] [--questions <json>] [--local]
 hula plan plan-text <planId> --file <planPath> [--local]
 hula plan draft-and-launch <planId> [--test] [--handoff <user>]
+hula plan retry <planId>
+hula plan requeue <planId>
 ```
 
 - **`start`** records a planning run. Mode is `--local` / `--remote`, or auto:
@@ -781,6 +798,19 @@ hula plan draft-and-launch <planId> [--test] [--handoff <user>]
   **`context`** / **`plan-text`** persist each planning artifact; and
   **`draft-and-launch`** hands the confirmed plan to the server to draft and
   launch automatically.
+- **`retry`** re-queues a failed plan job (most often a rejected
+  `plan-generate`) from the stored understanding, reusing the plan's stored
+  credentials. It refuses clearly (exit 1) when the plan is not in a retryable
+  state (e.g. already launched, or no failed task). When a `plan-generate` run
+  failed, its read record now carries the failure reason + output tail (shown by
+  `wait` and on the plan page), so you can see why before retrying.
+- **`answer`** accepts each follow-up in `newQuestions` with either
+  `questionText` or the alias `question` (and an optional `order`, `rationale`,
+  `options`); an entry with no text fails locally before any network call. Its
+  JSON prints `unanswered` (the plan's remaining unanswered questions) and, when
+  the server returned them, `newQuestions` with the stored `order` HubLaunch
+  assigned each follow-up — refer to follow-ups by those numbers. Over-cap
+  follow-ups join the last round (no error).
 - When `--file` is in the plan-initiate layout (H2 `Assessment` … `Questions`),
   **`context`** splits it itself: the Assessment body becomes `assessment`, the
   fenced json in `## Questions` becomes `questions`, and the rest is sent as
@@ -794,9 +824,43 @@ hula plan draft-and-launch <planId> [--test] [--handoff <user>]
   their JSON. `/hula-followup` does **not** pass `--local` (its writes are
   allowed in both modes).
 
+- **`requeue`** rescues a **stuck** plan — one whose latest task is still
+  `queued` but whose Redis `queue:pending` entry was lost (e.g. a platform
+  outage), so the dispatcher never picks it up again. It re-adds the task to the
+  queue at its **original** priority (its first-enqueue timestamp, not now), is
+  idempotent (a task already in the queue is a no-op), refuses a task that is not
+  `queued`, and — when the task record is gone — marks the plan failed instead of
+  re-adding. It **never debits a credit** (the run never started, so the rescue
+  is free). The same action is on each plan-list row and the plan detail page
+  under a **Stuck** badge. To requeue a specific task directly, see
+  [`hula task requeue`](#hula-task).
+
 All subcommands accept `--url <serverUrl>` and `--api-key <key>` overrides with
 the same precedence as `hula info`. See [Advanced Usage](advanced.md) for the
 full remote-planning flow.
+
+---
+
+## `hula task`
+
+The task command group. Like `hula plan`, every subcommand prints exactly one
+JSON object on stdout (logs go to stderr).
+
+```bash
+hula task requeue <taskId>
+```
+
+- **`requeue`** re-adds a stuck `queued` task to the queue at its original
+  priority — the task-id-keyed form of [`hula plan requeue`](#hula-plan). Same
+  semantics: idempotent, refuses a non-`queued` task, 404s when the task record
+  is gone, and never debits a credit.
+
+Accepts `--url` / `--api-key` overrides with the same precedence as `hula info`.
+
+> **Tuning stuck detection.** A plan is flagged **stuck** once its latest task
+> has been `queued` longer than `HULA_STUCK_QUEUED_THRESHOLD_MS` (server-side,
+> default `600000` ms / 10 minutes) **and** is absent from the deployment's
+> `queue:pending` set.
 
 ---
 
