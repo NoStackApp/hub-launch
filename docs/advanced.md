@@ -382,11 +382,20 @@ mergePolicy: { minConfidence: 90, autoMerge: false },
   reach to earn the `ready` verdict. Defaults to `90` when absent.
 - **`autoMerge`** — boolean; opt into server-side auto-merge of `ready` PRs.
   Defaults to `false`.
+- **`autoMergeRiskClasses`** — optional array of **change-risk classes** allowed
+  to auto-merge under the threshold flow (see
+  [Change-risk profile](#change-risk-profile)). **Omitting it keeps today's
+  behaviour** — the risk gate stays off and threshold auto-merge is unchanged.
+  When set, a PR auto-merges only if confidence ≥ threshold **and** every change
+  class of the diff is on this allowlist. Recommended starting value: the three
+  "loud" classes that announce themselves when wrong —
+  `["visible-ui", "visible-cli", "orchestration-loud"]`. Any other class (or the
+  never-allowlisted `unknown`) then **needs a human**, even at confidence 100.
 
 Both keys are optional. The value is forwarded to the server on every
 `hula launch`. **Precedence:** the config wins over the dashboard setting field
 by field; a field absent in both falls back to the server default
-(`minConfidence: 90`, `autoMerge: off`).
+(`minConfidence: 90`, `autoMerge: off`, risk gate off).
 
 ### How `hula approve` uses it
 
@@ -421,6 +430,40 @@ PR already merged) or `git pull --ff-only` to catch your local checkout up.
 The `afterRevert` hook — the symmetric rebuild counterpart of `afterMerge`, run
 by `hula revert --merge` after it squash-merges the revert PR — is likewise
 **local only**: a server-side auto-merge of a revert PR does not trigger it.
+
+### Change-risk profile
+
+Alongside the 0–100 confidence number, the server derives a **change-risk
+profile** — a second, independent signal. Confidence answers *"how sure are we
+the change is correct?"*; the risk profile answers a different question: *"if we
+were wrong, how loudly would the defect announce itself?"* It is derived
+deterministically from the PR diff (paths + hunks), never feeds back into the
+confidence number, and is shown everywhere confidence is — the dashboard (a chip
+beside the number, hover for the triggering files), `hula view` / `hula info`,
+and one extra line on the single confidence PR comment.
+
+A change may carry several classes; the **headline** is the most severe. The
+fixed taxonomy, most-severe first:
+
+| Class | Meaning |
+|---|---|
+| `credentials-env` | touches env/secret handling, reserved-env filtering, or auth |
+| `data-schema` | alters `prisma/schema.prisma` or a migration |
+| `access-visibility` | changes who may see or do what (ownership / authorization / visibility) |
+| `data-write` | creates/updates/deletes/upserts persisted data |
+| `external-side-effect` | posts to GitHub/Slack/email or calls an external API with side effects |
+| `unknown` | matched no known class — **never** auto-mergeable |
+| `orchestration-loud` | worker/queue/dispatcher step that fails loudly on the next run |
+| `visible-cli` | CLI output / print path |
+| `visible-ui` | dashboard component / UI |
+
+The "quiet-damage" group (the first five) can do damage before anyone notices
+and ranks **above** the "loud" group (the last three), which announces itself
+immediately. `unknown` sits between them and is never on an allowlist — an
+unrecognised change always needs a human when the gate is on. The
+`autoMergeRiskClasses` allowlist (above) is the opt-in that turns the gate on;
+absent, the profile is **information only** and threshold auto-merge is
+unchanged.
 
 ## PR comments
 
