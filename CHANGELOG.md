@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Failed-with-attempts conflict episodes are now retried automatically, plus a
+  manual retry.** A merge-conflict fix recorded as `failed` (it never even
+  started) while the plan's own run was active, but still under the attempt cap,
+  used to sit forever until a human merged the base branch by hand. A third
+  branch in the post-run conflict re-check now re-checks mergeability when that
+  run ends and either marks the PR resolved or starts a fresh attempt (parking in
+  `manual` only at the cap), with the same exactly-once claim as the existing
+  branches and a safety-net sweep. A new `hula conflict retry <trackingName>`
+  command, `POST /api/v1/plans/:id/conflict/retry` endpoint, and a Retry button on
+  the plan page's conflict card drive the same path on demand — free (no credits)
+  and allowed even past the cap so a human can force another attempt. Built with
+  AI assistance.
+
+### Fixed
+
+- **`hula approve` now gates on the newest plan-level merge confidence.** It
+  reads the status endpoint's new additive `effectiveMergeAssessment` field (the
+  newest plan-level assessment recomputed from the full evidence set, else the
+  per-run value), so the CLI gate matches the confidence shown on the dashboard
+  plan list/detail instead of enforcing a stale per-run score. Falls back to the
+  existing `mergeAssessment` field when an older server does not send the new
+  one. Built with AI assistance.
+
+- **`hula plan answer` hardens its follow-up round.** It normalizes each
+  `newQuestions` entry before sending it (text from `questionText` or the alias
+  `question`, a kept integer `order`, normalized `options`) and fails locally —
+  exit 1, no network call — on an entry with no text. Its JSON now prints
+  `unanswered` and, when the server returns them, the stored `newQuestions` with
+  the `order` HubLaunch assigned each follow-up (older servers omit the field).
+  The `/hula-plan` and `/hula-followup` skills now state the exact
+  `newQuestions` shape, the numbering rule, how to use the returned numbers, and
+  that over-cap follow-ups join the last of at most 3 rounds. Built with AI
+  assistance.
+
 ## [1.44.2] - 2026-11-05
 
 ### Added
