@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.46.0] - 2026-11-11
+
+### Added
+- Project goals are stored on HubLaunch (`hula project goals`, `hula project set goals`), and the save-goals question is asked at most once per project. `.hublaunch/goals.md` is no longer needed.
+- `hula conflict retry <trackingName>` retries a merge-conflict fix. Failed attempts under the cap now retry automatically.
+- `hula plan retry`, `hula plan requeue` and `hula task requeue` recover failed or stuck plans and tasks.
+- `hula e2e record <plan>` records end-to-end tests you ran locally.
+- `hula assessments prune` removes old merge-assessment comments. Assessments now appear on the dashboard only.
+- `hula project set stage <value>` controls how freely auto-merge fires.
+- A new `lamp` sandbox profile (PHP + MariaDB + Node 22).
+- `hula info` shows change risk, the style review, and token and cost totals.
+
+### Changed
+- Planning and launching is now one review. `/hula-followup` asks once, and `go` launches with the recommended answers.
+- `hula info` and `hula launch` print the full log to the terminal. `--open` opens it in an editor instead.
+- `hula plan followup` no longer cuts off its JSON output, and gains `--fields` and `--omit-text`.
+- Hosted runs use the repo's pinned Node version.
+- Contribution PRs cite the Responsible Contribution Guidelines only where the project allows links.
+
+### Fixed
+- `hula approve` no longer reports a failure after a successful merge, and it now uses the newest merge confidence.
+- Settings from a newer CLI version are skipped with a warning instead of wiping your login.
+- `hula launch` won't open a duplicate PR, and it reports push errors accurately.
+- `hula plan answer` checks follow-up questions before sending them.
+
 ## [1.44.2] - 2026-11-05
 
 ### Added
