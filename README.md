@@ -38,8 +38,8 @@ the follow-up conversation inline (or run `/hula-followup <planId>` from any
 checkout of the repo to pick it up anywhere — nothing is lost if the original
 session dies). The sandbox runs the same honest assessment as local `/hula-plan`,
 so `/hula-followup` shows it first — titled by its overall score, with a
-proceed / safer-alternative / stop question when any category scores low and an
-offer to save `.hublaunch/goals.md` when none exists. After you confirm the
+proceed / safer-alternative / stop question when any category scores low and a
+one-time offer to save the inferred project goals on HubLaunch. After you confirm the
 understanding, you choose: **plan locally**
 (you approve the plan before it launches) or let **HubLaunch draft the plan and
 launch it automatically**. Pass `--local` to force today's all-local flow (also
@@ -276,14 +276,22 @@ and ideas for automating your side of the loop with `hula info`.
 
 ## Project goals
 
-State what your project is for in a committed file, `.hublaunch/goals.md`, and
-HubLaunch will judge incoming requests against it. Before planning anything,
+State what your project is for and HubLaunch stores it as the project's goals,
+then judges incoming requests against them. Before planning anything,
 `/hula-assess` and `/hula-plan` score a request 1–5 on code integrity, project
 goals, security, compatibility, and maintenance burden — so when you triage an
 issue someone else filed, you see an honest verdict (and a safer alternative
 when a score is below 5) before you commit to building it.
 
-The file is plain markdown:
+Set them on the project's **Settings** page, or from the CLI (no editor opens):
+
+```bash
+hula project set goals --file goals.md     # or --text "…", or - to read stdin
+hula project goals                         # print them (--json for scripts)
+hula project set goals --clear             # remove them
+```
+
+The goals are plain markdown:
 
 ```markdown
 # Project goals
@@ -297,11 +305,12 @@ A short paragraph on what the project is for and who it serves.
 - Something the project deliberately does not do
 ```
 
-Because it is **committed** (not gitignored like `hublaunch.config.js`), other
-maintainers and the remote planning sandbox read the same goals. If the file is
-absent, `/hula-assess` and `/hula-plan` infer your goals from the README and
-docs and offer to write it for you — commit it so everyone shares one source of
-truth.
+Because they live on HubLaunch, every maintainer and the remote planning sandbox
+read the same goals — nothing is committed to the repo. If none are saved,
+`/hula-assess` and `/hula-plan` infer your goals from the README and docs and
+ask **once per project** whether to save them; answering "No" is remembered too.
+A repo that already has a committed `.hublaunch/goals.md` has it imported once;
+after that the goals are edited only on HubLaunch.
 
 ## Other commands
 
