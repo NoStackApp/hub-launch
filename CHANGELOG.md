@@ -7,6 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Project goals are remembered on HubLaunch, and the save-goals question is
+  asked at most once per project.** Each project now stores its goals itself
+  instead of asking you to commit `.hublaunch/goals.md`. Edit them on the
+  project's Settings page (which shows a small reminder while none are set) or
+  with the new `hula project goals [--json]` and `hula project set goals
+  (--text "…" | --file <path> | - | --clear | --declined)` commands — no editor
+  ever opens. Answering "A) Yes" or "B) Yes, with edits" to the planning
+  save-goals question now saves the goals on HubLaunch; the server shows that
+  question only once per project (declining counts), whichever CLI version is
+  running, and passes saved goals to planning so the AI stops asking. An
+  existing `.hublaunch/goals.md` is imported once and then left untouched. No
+  skill writes the goals file any more. The `hula project` command group is now
+  registered, so `hula project set stage` works too. Built with AI assistance.
+
+- **Failed-with-attempts conflict episodes are now retried automatically, plus a
+  manual retry.** A merge-conflict fix recorded as `failed` (it never even
+  started) while the plan's own run was active, but still under the attempt cap,
+  used to sit forever until a human merged the base branch by hand. A third
+  branch in the post-run conflict re-check now re-checks mergeability when that
+  run ends and either marks the PR resolved or starts a fresh attempt (parking in
+  `manual` only at the cap), with the same exactly-once claim as the existing
+  branches and a safety-net sweep. A new `hula conflict retry <trackingName>`
+  command, `POST /api/v1/plans/:id/conflict/retry` endpoint, and a Retry button on
+  the plan page's conflict card drive the same path on demand — free (no credits)
+  and allowed even past the cap so a human can force another attempt. Built with
+  AI assistance.
+
+### Changed
+
+- **Raising a plan and launching it is now a single review.** On the dashboard
+  the new-plan form auto-fills an editable tracking name from the request (an
+  empty name never blocks Start), and the plan page pre-selects each question's
+  ⭐ recommended option, surfaces the plan's assumptions as their own list, adds
+  an "Accept all recommended" control, and collapses save-answers + confirm +
+  draft-and-launch into one "Accept & launch" button (the safety go/no-go
+  question and any question without a recommendation stay blank and must be
+  answered first). In the CLI, `/hula-followup` merges the "Is this correct?" and
+  "local or remote?" steps into one combined message where `go`/`remote` accepts
+  the recommended defaults and launches remotely, `local` plans locally, and
+  anything else is treated as corrections. Built with AI assistance.
+
+### Fixed
+
+- **`hula approve` no longer reports failure after a successful merge; it prints
+  the merge commit id.** Two best-effort post-merge cleanup steps (deleting the
+  local branch, removing the item from tracking) used to be able to throw inside
+  the same path as the merge and surface as `Failed to merge PR #<n>` with a
+  non-zero exit, even though the PR had already merged. Every post-merge step is
+  now non-fatal: a missing local branch is skipped quietly, remove-from-tracking
+  resolves a just-closed/archived plan (and tolerates an already-gone record),
+  and an unexpected tracking-removal error prints a "still tracked — remove with
+  …" note instead of failing. The command now always exits 0 once the merge
+  itself succeeds and prints the merge commit id. Built with AI assistance.
+- **The config loader forgives newer-version settings instead of dropping your
+  login.** A CLI whose settings schema predated a newer block key (e.g.
+  `e2e.runOnEveryLaunch`) rejected the entire `hublaunch.config.js` and silently
+  fell back to defaults — discarding the saved `hulaApiKey` and forcing a `hula
+  login`. The loader now tolerates an unrecognized setting **inside a known
+  block** — dropping it with a warning that names its full dotted path — **only
+  when** the config declares a CLI version newer than the one running (so a typo
+  in an up-to-date file still fails loudly). A genuinely invalid value, or an
+  unrecognized key not justified by a newer version, still fails — now naming the
+  exact setting path instead of silently defaulting. Note the gate depends on
+  `config.version` reflecting the CLI that wrote the file; a newer key
+  hand-added to a file with an older/absent `version` still errors, directing you
+  to `hula update`. A CI guard (`pnpm run guard:schema-release`) and a release
+  checklist/doc note now require re-releasing the published CLI after any
+  settings-schema change so installed CLIs never lag `main`. Built with AI
+  assistance.
+
+- **`hula approve` now gates on the newest plan-level merge confidence.** It
+  reads the status endpoint's new additive `effectiveMergeAssessment` field (the
+  newest plan-level assessment recomputed from the full evidence set, else the
+  per-run value), so the CLI gate matches the confidence shown on the dashboard
+  plan list/detail instead of enforcing a stale per-run score. Falls back to the
+  existing `mergeAssessment` field when an older server does not send the new
+  one. Built with AI assistance.
+
+- **`hula plan answer` hardens its follow-up round.** It normalizes each
+  `newQuestions` entry before sending it (text from `questionText` or the alias
+  `question`, a kept integer `order`, normalized `options`) and fails locally —
+  exit 1, no network call — on an entry with no text. Its JSON now prints
+  `unanswered` and, when the server returns them, the stored `newQuestions` with
+  the `order` HubLaunch assigned each follow-up (older servers omit the field).
+  The `/hula-plan` and `/hula-followup` skills now state the exact
+  `newQuestions` shape, the numbering rule, how to use the returned numbers, and
+  that over-cap follow-ups join the last of at most 3 rounds. Built with AI
+  assistance.
+
 ## [1.44.2] - 2026-11-05
 
 ### Added
