@@ -27,7 +27,9 @@ Complete reference for every hula CLI command.
 | `hula credentials sync` | — | Save the current credentials to HubLaunch as the `default` set (web + phone planning) |
 | `hula credentials list` | — | List the credential sets stored on HubLaunch (hints only) |
 | `hula init web` | — | Enable web + phone planning and sync now (`hula init web disable` turns it off) |
-| `hula plan <subcommand>` | — | Remote-planning command group (used by `/hula-plan` and `/hula-followup`) |
+| `hula plan <subcommand>` | — | Remote-planning command group (used by `/hula-plan` and `/hula-followup`); includes `plan requeue <planId\|name>` to rescue a stuck plan |
+| `hula task requeue <taskId>` | — | Requeue a stuck `queued` task whose queue entry was lost (free; never debits a credit) |
+| `hula conflict retry <trackingName>` | — | Manually retry a plan's merge-conflict resolution (free; works even past the attempt cap). Prints the created task id; `409` when a run is active, `400` when the PR isn't conflicting |
 | `hula script <name>` | — | Run a bundled cross-platform workflow script (used by the Agent Skills) |
 | `hula instructions <name>` | — | Print a bundled instruction doc (`planning`, `proceed`, `skill-creation`, `assess`, `plan-initiate`, `plan-generate`) |
 | `hula session-hook` | — | Claude Code PreToolUse hook that captures launch-session provenance |
@@ -139,6 +141,11 @@ hula contribute https://github.com/<owner>/<repo>    # repo URL (with or without
 hula contribute https://github.com/<owner>/<repo>/issues/42   # issue URL
 hula contribute <owner/repo> --dir ./my-clone        # clone into a specific directory
 hula contribute <owner/repo> --yes                   # non-interactive: print the remaining steps
+hula contribute <owner/repo> --scout                 # read-only repo report only (no fork, no clone)
+hula contribute <owner/repo> --scout --json          # the report as one JSON object on stdout
+hula contribute <owner/repo> --scout --refresh       # ignore the 24h cache
+hula contribute <owner/repo> --scout --window 30-120 # sample PRs created 30–120 days ago
+hula contribute <owner/repo> --skip-scout            # set up without the repo report
 ```
 
 The command:
@@ -148,15 +155,24 @@ The command:
 2. **Stops if you already have push access** to the target and points you at the
    normal owner setup (clone it, then `hula init` + `hula login`) — no fork
    needed.
-3. Creates **or reuses** your fork of the upstream (best-effort enables Actions
+3. **Checks the repo (read-only)** and prints a short summary: a verdict
+   (*Good target* / *Good with conditions* / *Poor target* / *Closed to
+   outsiders*), the odds as a band, the evidence, and any steps (for example
+   "Get the issue assigned to you first"). When the verdict is *Poor target* or
+   *Closed to outsiders*, a terminal run asks **Fork anyway?** (default No);
+   with `--yes` / no TTY it prints a warning and continues. If the check fails
+   it only warns — it never stops the setup. `--skip-scout` skips it.
+4. Creates **or reuses** your fork of the upstream (best-effort enables Actions
    and mutes the fork's notifications).
-4. Clones the **fork** into `./<repo>` (or `--dir`), with `origin` = your fork
+5. Clones the **fork** into `./<repo>` (or `--dir`), with `origin` = your fork
    and `upstream` = the parent repo.
-5. Writes a minimal guest `.hublaunch/hublaunch.config.js` (`contributionMode:
+6. Writes a minimal guest `.hublaunch/hublaunch.config.js` (`contributionMode:
    true`, the fork as `hulaProject`, the fork's default branch as
-   `uploadBranch`) and `.git/info/exclude` entries that keep HubLaunch artifacts
+   `uploadBranch`, and — when the repo check found rules — a
+   `contributionReminders` list that `hula launch` prints as a warning before
+   building, never blocking) and `.git/info/exclude` entries that keep HubLaunch artifacts
    off the fork. It does **not** run full `hula init`.
-6. Guides the **GitHub-App install on the fork** and runs `hula login` inside
+7. Guides the **GitHub-App install on the fork** and runs `hula login` inside
    the clone. `hula login` requires **write** access on `origin`, which you have
    on your fork but not on the read-only upstream — this is why the command only
    ever clones the fork. Installing the App is an interactive GitHub consent
@@ -172,6 +188,23 @@ PR.
 | ------------- | -------------------------------------------------------------------- |
 | `--dir <path>`| Directory to clone the fork into (defaults to `./<repo>`)            |
 | `-y, --yes`   | Non-interactive: skip the guided App-install/login and print the steps |
+| `--scout`     | Only print the read-only repo report and exit — no fork, no clone, no directory created |
+| `--json`      | With `--scout`: write the report as one JSON object on stdout; logs go to stderr |
+| `--refresh`   | Ignore the 24h report cache (`~/.hublaunch/cache/scout/`) |
+| `--window <from-to>` | PR sample window in days ago (default `90-180`); the window's dates are always printed |
+| `--skip-scout`| Do not run the repo report before forking. (Named `--skip-scout`, not `--no-scout`, so it never clashes with `--scout`.) |
+
+### The repo report (`--scout`)
+
+`hula contribute <target> --scout` accepts every target form above (an issue URL
+is reduced to its repo) and prints nine sections: **Door open**, **Does anyone
+respond**, **Who decides**, **How crowded**, **Health**, **How to get in**,
+**Fit for the HubLaunch sandbox**, **Verdict** and **Caveats**. It only reads
+from GitHub (REST `GET`s and GraphQL queries), uses your saved login or
+`GITHUB_TOKEN` when there is one (without a token the sample is smaller and has
+no reply data), and caches the result per repo for 24 hours. See
+[Check a repo before you fork](./contributing-to-others.md#check-a-repo-before-you-fork---scout)
+for what each section means and how the verdict is decided.
 
 See [Contributing to someone else's repository](./contributing-to-others.md) for
 the full lifecycle, AI-assistance disclosure, and maintainer etiquette.
@@ -216,9 +249,22 @@ Trigger a launch job on the hula-project server. The server runs an AI coding ag
 
 ```bash
 hula launch <issueName> <planPath>
-hula launch --show <name>     # Show job status
-hula launch --logs <name>     # Show job logs
+hula launch --show <name>              # Show job status
+hula launch --logs <name>             # Print the FULL stored run log to stdout
+hula launch --logs <name> --open      # Open the log in an editor (TTY only; --editor is a deprecated alias)
+hula launch --logs <name> --from 0 --lines 200  # Print a line range window [0, 200)
 ```
+
+`hula launch --logs <name>` prints the **full** stored run log (head through
+tail) to stdout by default — not just the last `--lines`. Pass `--open` to open
+it in your configured editor instead (`--editor` is a deprecated alias); the
+editor is only used on a TTY, so piping or redirecting always prints. `--from`
+(0-based start line) with `--lines` requests a range window of the full log.
+
+The full run log is retained **uncapped** in storage (`Task.logContent`); the
+logs route can return it in ranges (`from`/`lines`) with the head always
+reachable from `--from 0`. Only the live-tail preview (`Task.lastOutput`, shown
+by `--type output`) is trimmed (32 KB).
 
 **Resume from a specific step after a failure:**
 
@@ -381,12 +427,16 @@ hula info <trackingName> [flags]
 
 | Flag                | Description                                                    |
 | ------------------- | ------------------------------------------------------------- |
-| `--logs`            | Full stored run log                                           |
+| `--logs`            | Full stored run log — printed to stdout by default            |
+| `--open`            | For `--logs`, open the log in an editor (TTY only)            |
+| `--from <n>`        | For `--logs`, 0-based start line for a range window           |
 | `--lastLogs`        | Last N lines of live output (uses `--lines`)                  |
 | `--diff`            | PR unified diff (fetched server-side from GitHub)             |
 | `--initial`         | Initial PR body / AI summary                                  |
 | `--lessons`         | Lessons-learned content                                       |
 | `--verify`          | Merge assessment (confidence, verdict, categories, steps)     |
+| `--cost`            | Total tokens and provider cost for the whole plan journey      |
+| `--cost-by-stage`   | With `--cost`, also print the per-part / per-stage breakdown    |
 | `--clientSessionId` | Claude Code session id that launched the plan                 |
 | `--lines <n>`       | Trailing line count for `--lastLogs` (default: 100)           |
 | `-r, --raw`         | For a single content key, print raw content to stdout         |
@@ -394,8 +444,9 @@ hula info <trackingName> [flags]
 | `--api-key <key>`   | Hula API key (overrides config)                               |
 
 Content keys (`--logs`, `--lastLogs`, `--diff`, `--initial`, `--lessons`,
-`--verify`) route to `GET /api/v1/info/:planName`. `--clientSessionId` routes to
-the status endpoint `GET /api/v1/ralph-run/:name/status`.
+`--verify`, `--cost`) route to `GET /api/v1/info/:planName`. `--clientSessionId`
+routes to the status endpoint `GET /api/v1/ralph-run/:name/status`. Cost is shown
+only on demand — default `hula info` output is unchanged.
 
 **Output rules** (let K = number of requested keys):
 
@@ -405,6 +456,16 @@ the status endpoint `GET /api/v1/ralph-run/:name/status`.
   (header, category scores, concerns, end-user steps, then the full JSON). It is
   never opened in an editor. `--raw` prints a single compact JSON line. When the
   server has no assessment, prints `No merge assessment available for <name>.`
+  When the latest verification run failed **before** it could re-verify
+  (checkout / sandbox init / install), a `verification could not run: <reason>
+  (task <id>)` line is printed above the assessment and the confidence number is
+  left unchanged (never blanked). `--raw` then emits `{ assessment, verifyError }`.
+- **K == 1, `--cost`** → the plan total (total tokens + total provider cost) is
+  printed to stdout. With `--cost-by-stage` the per-journey-part (Planning,
+  Implementation, Fix, Verify) and per-stage breakdown is appended. Missing
+  telemetry renders `not available` (never `$0`/`0 tokens`); a part planned on
+  your own machine renders `not measured (planned on your computer)`. `--raw`
+  prints the raw `PlanTokenCost` JSON on one line.
 - **K == 1, `--clientSessionId`** → the session id (or `null`) is printed plain.
 - **K >= 2** → the requested keys are merged into one JSON object on stdout.
 - **K == 0** → error (exit 1). Pass at least one flag.
@@ -415,13 +476,17 @@ GitHub read soft-failed; the client handles this without crashing.
 ### Examples
 
 ```bash
-hula info my-feature --logs                 # opens the full run log in the editor
+hula info my-feature --logs                 # prints the full run log to stdout; add --open to open it in an editor
+hula info my-feature --logs --open           # opens the full run log in the editor (TTY only)
+hula info my-feature --logs --from 0 --lines 200  # prints a line range window [0, 200) of the full log
 hula info my-feature --lastLogs --lines 50   # opens the last 50 lines of live output
 hula info my-feature --diff                  # opens the PR diff
 hula info my-feature --initial               # opens the PR body / AI summary
 hula info my-feature --lessons               # opens lessons-learned content
 hula info my-feature --verify                # prints the merge assessment to stdout
 hula info my-feature --verify --raw          # prints the assessment as one JSON line
+hula info my-feature --cost                  # prints total tokens + total provider cost
+hula info my-feature --cost --cost-by-stage  # also prints the per-part / per-stage breakdown
 hula info my-feature --clientSessionId       # prints the launching session id (plain)
 hula info my-feature --logs --diff           # prints a merged JSON object {logs, diff}
 hula info my-feature --logs --clientSessionId# prints merged JSON across both endpoints
@@ -477,6 +542,16 @@ cases → assessment, no coding session) through the normal queue so the number 
 re-earned from a fresh execution even when no code changed. Evidence is recorded
 via `POST /api/v1/plans/:id/evidence`. Against an older server without these
 routes the command reports that reassess is unsupported.
+
+A verification-only run checks out the PR branch when it still exists. For a
+**merged plan whose branch was deleted** (`merge --delete-branch`) the run checks
+out **by commit sha** instead — the PR merge commit for a merged plan, else the
+stored PR head — so a merged plan can still be re-verified from the code on
+`main`. For such a plan, evidence recorded at **either** the stored PR head or
+the merge commit counts toward the number, and the basis names the commit as
+`proven n/m at <sha7> (merged as <sha7>)`. If the run fails before it can
+re-verify, `hula info --verify` surfaces `verification could not run` and the
+number is left unchanged.
 
 ```bash
 hula reassess my-feature            # recompute from stored evidence + provenance
@@ -768,6 +843,8 @@ hula plan understanding <planId> --file <markdown> [--local]
 hula plan context <planId> --file <markdown> [--assessment-file <md>] [--questions <json>] [--local]
 hula plan plan-text <planId> --file <planPath> [--local]
 hula plan draft-and-launch <planId> [--test] [--handoff <user>]
+hula plan retry <planId|name>
+hula plan requeue <planId|name>
 ```
 
 - **`start`** records a planning run. Mode is `--local` / `--remote`, or auto:
@@ -781,6 +858,21 @@ hula plan draft-and-launch <planId> [--test] [--handoff <user>]
   **`context`** / **`plan-text`** persist each planning artifact; and
   **`draft-and-launch`** hands the confirmed plan to the server to draft and
   launch automatically.
+- **`retry`** re-queues a failed plan job (most often a rejected
+  `plan-generate`) from the stored understanding, reusing the plan's stored
+  credentials. It accepts a **plan id or a tracking name** (resolved within the
+  configured project — 0 or >1 matches is a clear exit-1 error). It refuses
+  clearly (exit 1) when the plan is not in a retryable state (e.g. already
+  launched, or no failed task). When a `plan-generate` run failed, its read
+  record now carries the failure reason + output tail (shown by `wait` and on
+  the plan page), so you can see why before retrying.
+- **`answer`** accepts each follow-up in `newQuestions` with either
+  `questionText` or the alias `question` (and an optional `order`, `rationale`,
+  `options`); an entry with no text fails locally before any network call. Its
+  JSON prints `unanswered` (the plan's remaining unanswered questions) and, when
+  the server returned them, `newQuestions` with the stored `order` HubLaunch
+  assigned each follow-up — refer to follow-ups by those numbers. Over-cap
+  follow-ups join the last round (no error).
 - When `--file` is in the plan-initiate layout (H2 `Assessment` … `Questions`),
   **`context`** splits it itself: the Assessment body becomes `assessment`, the
   fenced json in `## Questions` becomes `questions`, and the rest is sent as
@@ -794,9 +886,58 @@ hula plan draft-and-launch <planId> [--test] [--handoff <user>]
   their JSON. `/hula-followup` does **not** pass `--local` (its writes are
   allowed in both modes).
 
+- **`requeue`** rescues a **stuck** plan — one whose latest task is still
+  `queued` but whose Redis `queue:pending` entry was lost (e.g. a platform
+  outage), so the dispatcher never picks it up again. It accepts a **plan id or a
+  tracking name** (resolved within the configured project — 0 or >1 matches is a
+  clear exit-1 error). It re-adds the task to the queue at its **original**
+  priority (its first-enqueue timestamp, not now), is idempotent (a task already
+  in the queue is a no-op), refuses a task that is not `queued`, and — when the
+  task record is gone — marks the plan failed instead of re-adding. It **never
+  debits a credit** (the run never started, so the rescue is free). The same
+  action is on each plan-list row and the plan detail page under a **Stuck in
+  queue** badge. To requeue a specific task directly, see
+  [`hula task requeue`](#hula-task).
+
+  Beyond this manual action, the server-side **queue sweep** now reconciles
+  these orphans automatically: every run it re-enqueues any `queued` task that is
+  missing from `queue:pending` and older than the stuck threshold, and — after
+  `HULA_RECONCILE_MAX_RETRIES` (default 5) consecutive unsuccessful rescue cycles
+  — marks it failed (the `enqueue` platform-fault stage) with a notification.
+
 All subcommands accept `--url <serverUrl>` and `--api-key <key>` overrides with
 the same precedence as `hula info`. See [Advanced Usage](advanced.md) for the
 full remote-planning flow.
+
+---
+
+## `hula task`
+
+The task command group. Like `hula plan`, every subcommand prints exactly one
+JSON object on stdout (logs go to stderr).
+
+```bash
+hula task requeue <taskId>
+```
+
+- **`requeue`** re-adds a stuck `queued` task to the queue at its original
+  priority — the task-id-keyed form of [`hula plan requeue`](#hula-plan). Same
+  semantics: idempotent, refuses a non-`queued` task, 404s when the task record
+  is gone, and never debits a credit.
+
+Accepts `--url` / `--api-key` overrides with the same precedence as `hula info`.
+
+> **Tuning stuck detection.** A plan is flagged **stuck** once its latest task
+> has been `queued` longer than `HULA_STUCK_QUEUED_THRESHOLD_MS` (server-side,
+> default `600000` ms / 10 minutes) **and** is absent from the deployment's
+> `queue:pending` set. The automatic reconcile sweep reuses this same threshold
+> (so a task is never auto-rescued before it is shown as stuck) and is further
+> tuned by `HULA_RECONCILE_MAX_RETRIES` (consecutive rescue cycles before giving
+> up, default `5`) and `HULA_RECONCILE_LOG_MAX` (how many recent reconcile
+> actions the admin report retains, default `50`). Admins can inspect the
+> DB-queued vs dispatch-queued counts and the last reconcile actions at
+> `GET /api/v1/admin/queue` (admin-only; non-admins get a 404), alongside the
+> per-deployment `GET /api/v1/admin/queue-namespaces` observability endpoint.
 
 ---
 
