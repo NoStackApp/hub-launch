@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The `lamp` sandbox now serves your PHP app on port 8080, and can run PHP
+  8.4.** Every `lamp` run starts a web server on `127.0.0.1:8080` (inside the
+  sandbox only) serving the repo's `public/` directory, or the repo root, with
+  the run's own database, so an e2e `ready: curl http://127.0.0.1:8080/…` gate
+  has something to poll. PHP 8.4 is installed beside the default 8.3; select it
+  with `--sandbox-profile lamp:8.4` or `sandboxProfile: { type: 'lamp', php:
+  '8.4' }` (a new `hula init` choice), and it drives both the web server and the
+  command-line `php`/`composer`. Unknown versions are rejected by the CLI and
+  the server. Built with AI assistance.
+- **`hula approve` fixes merge conflicts right before merging, and automatic
+  conflict fixes stop.** HubLaunch used to start a paid sandbox fix run for every
+  conflicting open PR after each push to `main` (and again on PR events), so cost
+  grew with open PRs and merges. Now pushes to `main` and new PR commits only
+  label conflicting PRs `detected` on the dashboard (no PR comment, no fix run),
+  and the post-run re-check never re-queues a fix. Instead, `hula approve` checks
+  for conflicts first: on a HubLaunch-built PR it resolves them once, waits with
+  progress, shows each file the fix changed (+/−), a GitHub compare link and the
+  refreshed merge score, and asks **Merge now?** (Yes → the normal merge, No →
+  stop; a later `hula approve` merges without another fix). Busy plans, PRs
+  HubLaunch didn't build, and failed fixes exit 1 with a clear message.
+  Non-interactive runs exit with the new code **4** and one
+  `HULA_MERGE_CONFLICTS_RESOLVED:` stdout line; `hula script approve-remote` /
+  `approve-local` re-emit it as `code: "conflicts_resolved"`, and the
+  `/hula-approve` skill shows the change summary and asks Merge now / Later. No
+  server configured, or an older server, behaves as before. Built with AI
+  assistance.
+
+## [1.46.0] - 2026-11-11
+
+### Added
+- Project goals are stored on HubLaunch (`hula project goals`, `hula project set goals`), and the save-goals question is asked at most once per project. `.hublaunch/goals.md` is no longer needed.
+- `hula conflict retry <trackingName>` retries a merge-conflict fix. Failed attempts under the cap now retry automatically.
+- `hula plan retry`, `hula plan requeue` and `hula task requeue` recover failed or stuck plans and tasks.
+- `hula e2e record <plan>` records end-to-end tests you ran locally.
+- `hula assessments prune` removes old merge-assessment comments. Assessments now appear on the dashboard only.
+- `hula project set stage <value>` controls how freely auto-merge fires.
+- A new `lamp` sandbox profile (PHP + MariaDB + Node 22).
+- `hula info` shows change risk, the style review, and token and cost totals.
+
+### Changed
+- Planning and launching is now one review. `/hula-followup` asks once, and `go` launches with the recommended answers.
+- `hula info` and `hula launch` print the full log to the terminal. `--open` opens it in an editor instead.
+- `hula plan followup` no longer cuts off its JSON output, and gains `--fields` and `--omit-text`.
+- Hosted runs use the repo's pinned Node version.
+- Contribution PRs cite the Responsible Contribution Guidelines only where the project allows links.
+
+### Fixed
+- `hula approve` no longer reports a failure after a successful merge, and it now uses the newest merge confidence.
+- Settings from a newer CLI version are skipped with a warning instead of wiping your login.
+- `hula launch` won't open a duplicate PR, and it reports push errors accurately.
+- `hula plan answer` checks follow-up questions before sending them.
+
 ## [1.44.2] - 2026-11-05
 
 ### Added
