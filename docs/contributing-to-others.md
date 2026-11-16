@@ -24,6 +24,119 @@ It leaves you in a fork clone that is ready for contribution mode. See
 idempotent re-run behaviour. The sections below explain what that setup does and
 the flow from there; you can also do each step by hand.
 
+## Check a repo before you fork (`--scout`)
+
+Some repositories auto-close outside PRs, need the issue assigned to you first,
+ban AI help, or rarely answer outside contributors. Find out **before** you
+spend a launch on it:
+
+```bash
+hula contribute <owner/repo> --scout            # read-only report, no fork, no clone
+hula contribute <owner/repo> --scout --json     # the same report as JSON (stdout only)
+```
+
+The plain `hula contribute <owner/repo>` runs the same check automatically after
+the push-access check and before forking, prints a short summary, and asks
+**Fork anyway?** (default No) when the verdict is *Poor target* or *Closed to
+outsiders*. With `--yes` or no terminal it prints a warning and continues; a
+failed check only warns; `--skip-scout` skips it.
+
+**It is read-only.** The report only makes REST `GET` requests and GraphQL
+*queries* against `api.github.com` — it never forks, comments, labels, or writes
+anything — and it never runs an AI model: every rule comes from fixed,
+tested detectors. Text from the repo (CONTRIBUTING, the PR template, README,
+workflow files) is treated as untrusted data: it is only matched against fixed
+patterns, so nothing written in it can change the verdict.
+
+### What the report shows
+
+| Section | What it reports |
+| --- | --- |
+| **Door open** | Archived; issues disabled; PRs disabled or limited to collaborators (when GitHub says so, otherwise "unknown"); known auto-close workflows; AI stance (banned / disclosure required / allowed / not stated); CLA; DCO; open-PR caps ("not checked; read CONTRIBUTING") |
+| **Does anyone respond** | For **outside** PRs created in the window (authors who are not OWNER/MEMBER/COLLABORATOR; bots excluded): merge rate, share with a maintainer reply, median time to the first maintainer reply, median time to merge, outside authors with ≥ 1 merged PR, PRs closed with no human reply. The sample size and window dates are always printed. |
+| **Who decides** | How many maintainers replied to outside PRs, and the busiest one's share of those replies |
+| **How crowded** | Outside PRs per month, open PRs, outside authors with 5+ PRs in the window, open `good first issue` / `help wanted` issues |
+| **Health** | Last release, last push, share of the 100 most recent open issues with a label, stale bot (`actions/stale` or `.github/stale.yml`) |
+| **How to get in** | Get assigned first, discuss first, PR title format, AI disclosure, DCO sign-off, CLA, and where maintainers talk (Discussions, Discord/Slack/Zulip/Matrix links) |
+| **Fit for the HubLaunch sandbox** | Languages, and the repo's Node / Python / PHP pins compared with what the sandbox runs (Node 22/24, Python 3.12, PHP 8.3). An exact Node 20 pin is flagged — the sandbox dropped Node 20. |
+| **Verdict** | One of four labels, the odds as a band, the evidence, and the steps |
+| **Caveats** | The window ("results change with the window"), the sample size, the "maintainer" definition, sampling caps, a missing token, any section that was incomplete (for example a GitHub rate limit) |
+
+Known auto-close workflows are recognised from a small allow-list: an
+issue-assignment gate (e.g. an `enforce-issue-assignment` workflow), a workflow
+that closes PRs from outside contributors, a "vouch" gate, the semantic PR title
+action, `actions/stale`, and DCO / CLA checks. A workflow that closes PRs but
+matches none of these is listed as "rule not recognised" and does not change the
+verdict.
+
+### How the verdict is decided
+
+The odds are a **band** — `high`, `medium`, `low`, or `not enough data` — never a
+precise percentage (raw statistics still appear in the other sections).
+
+| Threshold | Value | Effect |
+| --- | --- | --- |
+| `minSample` | 10 outside PRs | fewer → band `not enough data`; the verdict comes from gates and conditions only |
+| `highMerge` / `highReply` | 60% merged / 70% replied | both met → band `high` (without a token: merge rate only) |
+| `mediumMerge` | 35% merged | → band `medium`; below it → `low` |
+| `poorMerge` | below 20% merged | → *Poor target* |
+| `poorReply` | below 30% replied | → *Poor target* |
+| `poorFirstReplyDays` | first reply slower than 30 days | → *Poor target* |
+| `singleReviewerShare` | one maintainer writes ≥ 70% of replies | → condition "Expect one person to review — keep PRs small" |
+
+In order:
+
+1. **Closed to outsiders** — the repo is archived, PRs are disabled or limited to
+   collaborators, a workflow closes outside PRs or gates them on a "vouch", or
+   the project bans AI-assisted contributions (every HubLaunch PR is
+   AI-assisted).
+2. **Poor target** — a `low` band, or any of the "Poor" thresholds above,
+   *unless* a gate explains it (an assignment gate or a "discuss first" rule), in
+   which case the verdict is **Good with conditions**.
+3. **Good with conditions** — any condition: get the issue assigned first,
+   discuss first, a single reviewer, a CLA, or a runtime pin the sandbox does
+   not run.
+4. **Good target** — otherwise.
+
+DCO sign-off, a semantic PR title and AI disclosure are listed as steps but do
+not downgrade a *Good target* — they are easy, mechanical steps.
+
+These are first-version thresholds calibrated on a handful of real repositories;
+they are exported constants (`VERDICT_THRESHOLDS`) so they can be tuned.
+
+### Window, token, cache
+
+- The sample is the PRs **created 90–180 days ago** by default (old enough to
+  have been answered); change it with `--window <from-to>`, e.g. `--window 30-120`.
+- With a token (your saved `hula login`, or `GITHUB_TOKEN`) up to 200 PRs are read
+  with their first 20 comments and 20 reviews. Without one, up to 100 PRs are
+  read and reply statistics show "needs a GitHub token".
+- If GitHub's rate limit is hit, the report still prints with the sections it
+  could read and a caveat naming the incomplete ones.
+- Reports are cached per repo for 24 hours in
+  `~/.hublaunch/cache/scout/<owner>__<repo>.json` (the token is never stored);
+  `--refresh` fetches fresh data.
+- Not checked in this version: limits written in prose (for example "at most 3
+  open PRs per person") and an AI-written summary of the contribution rules.
+
+### Rules become launch reminders
+
+When the plain `hula contribute` flow finds rules (get assigned first, discuss
+first, semantic PR title, DCO sign-off, CLA, AI disclosure, single reviewer), it
+saves them as plain-text reminders in the guest config:
+
+```js
+  // Rules this project asked for, found by `hula contribute`'s repo check.
+  // `hula launch` shows them before building; it never blocks on them.
+  contributionReminders: [
+    "Get the issue assigned to you before building — this repo closes PRs whose issue is not assigned to the author.",
+  ],
+```
+
+`hula launch` prints them under **This project's contribution rules** as a
+warning and continues — it never blocks or prompts on them. Edit or delete the
+list in `.hublaunch/hublaunch.config.js` at any time.
+
 ## The flow
 
 1. **Fork the upstream repository** on GitHub (`upstream/project` →

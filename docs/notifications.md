@@ -8,17 +8,19 @@ a small bridge) and how far you can take automating your response.
 ## What gets sent, and when
 
 Set `updateNotificationUrl` in `.hublaunch/hublaunch.config.js` and the server
-POSTs to it at each lifecycle stage of a launched task:
+POSTs to it once when a launched task finishes, plus when a remote plan needs
+you or a plan's proven share crosses a milestone:
 
-| Stage           | When                                                                  |
-| --------------- | --------------------------------------------------------------------- |
-| `running`       | The sandbox has started working on your plan                           |
-| `issue_created` | The GitHub issue for the run exists (with its URL)                     |
-| `completed`     | The PR is ready — includes the PR link and the verification score      |
-| `failed`        | Something went wrong — includes the failure stage and a log tail       |
+| Status              | When                                                                                                  |
+| ------------------- | ----------------------------------------------------------------------------------------------------- |
+| `completed`         | The PR is ready — includes the PR link, the GitHub issue link and merge confidence                    |
+| `failed`            | Something went wrong — includes the failure stage, an error line, the issue link and a View task link |
+| `questions_ready`   | A remote plan needs your answers before it can continue                                               |
+| `assessment_ready`  | An assess-only remote plan finished — review the assessment                                           |
+| `threshold_reached` | A plan's proven share crossed the merge threshold, or reached 100%                                    |
 
-Notifications are strictly forward-only (you'll never get a "started" after a
-"completed") and sent once per stage.
+You get one message per run, when it passes or fails. In-progress updates
+(queued, started, issue created) are not sent.
 
 ## Slack (works out of the box)
 
@@ -41,8 +43,10 @@ mention markup (`<@YOUR_MEMBER_ID>`) so completions actually ping you.
 
 Every non-Slack URL receives a JSON body with the raw event fields — including
 `trackingName`, `status`, `prUrl`, `prNumber`, `issueUrl`, `durationSeconds`,
-`verifyScore`, `verifyReason`, and a `logTail` on failures. Point it at
-Discord (via a relay), ntfy, n8n, Pipedream, or your own endpoint.
+`verifyScore`, `verifyReason`, and a `logTail` on failures. The run's GitHub
+issue (`issueUrl` / `issueNumber`) is on the final `completed` / `failed`
+event. Point it at Discord (via a relay), ntfy, n8n, Pipedream, or your own
+endpoint.
 
 PR-ready events also carry a `mergeAssessment` object: `{ confidence, verdict,
 threshold, categories, concerns, endUserSteps, … }` — the same merge-safety
