@@ -38,8 +38,8 @@ the follow-up conversation inline (or run `/hula-followup <planId>` from any
 checkout of the repo to pick it up anywhere — nothing is lost if the original
 session dies). The sandbox runs the same honest assessment as local `/hula-plan`,
 so `/hula-followup` shows it first — titled by its overall score, with a
-proceed / safer-alternative / stop question when any category scores low and an
-offer to save `.hublaunch/goals.md` when none exists. After you confirm the
+proceed / safer-alternative / stop question when any category scores low and a
+one-time offer to save the inferred project goals on HubLaunch. After you confirm the
 understanding, you choose: **plan locally**
 (you approve the plan before it launches) or let **HubLaunch draft the plan and
 launch it automatically**. Pass `--local` to force today's all-local flow (also
@@ -73,6 +73,60 @@ for the PR. If the confidence is below your project threshold (or no assessment
 is available) it prints the concerns and recommended end-user test steps and
 asks you to confirm — pass `--force` to merge without the prompt. Set the
 threshold with [`mergePolicy`](./docs/advanced.md#merge-policy).
+
+#### Merge conflicts
+
+HubLaunch does not spend a sandbox run fixing conflicts on every open PR each
+time `main` moves. Pushes to `main` and new PR commits only *label* conflicting
+PRs on the dashboard. The fix happens once, at merge time: if the PR conflicts
+and HubLaunch built it, `hula approve` resolves the conflicts first, waits with
+progress, shows what the fix changed and the refreshed score, and asks before
+merging:
+
+```text
+$ hula approve 42
+⚠️  PR #57 has merge conflicts with main. HubLaunch is resolving them now — this usually takes a few minutes.
+🔧 Resolving conflicts…
+🔎 Re-checking the fixed code…
+
+✅ Conflicts resolved. The fix changed 3 files (+42 −17):
+  M  src/foo.ts   +30 −10
+  M  src/bar.ts   +10 −7
+  A  src/baz.ts   +2 −0
+🔗 See the exact changes: https://github.com/<owner>/<repo>/compare/<before>...<after>
+📊 Merge confidence: 82/100 (threshold 80, verdict ready)
+
+? Merge now? (No = stop here; review the changes and run hula approve later) (y/N)
+```
+
+**Yes** continues into the normal merge (including the "Merge anyway?" prompt
+when the score is below threshold). **No** leaves the PR open; run
+`hula approve 42` again when you're ready and it merges without another fix.
+There is one try: if the fix can't clear the conflicts, if HubLaunch didn't
+build the PR, or if another HubLaunch run is still in progress, `hula approve`
+exits 1 and tells you to resolve the conflicts yourself (or wait). If the fix is
+still running after 45 minutes it stops waiting (exit 0); the server keeps
+going, and the next `hula approve` picks up where it left off.
+
+**Exit codes:** `0` merged, not merged at your request, or still working; `1`
+error; `3` merge confidence below threshold (non-interactive); `4` merge
+conflicts were just resolved (non-interactive). With exit `4`, `hula approve`
+writes one machine-readable line to stdout, so scripts and the `/hula-approve`
+skill can show the changes and ask Merge now / Later before re-running:
+
+```text
+HULA_MERGE_CONFLICTS_RESOLVED:{"message":"Merge conflicts were resolved. Review the changes, then merge again to proceed.","changes":{…},"assessment":{…}}
+```
+
+```bash
+hula approve 42                      # conflicts (if any) fixed first, then Merge now? [y/N]
+hula approve 42 < /dev/null; echo $? # non-interactive: 4 when conflicts were just resolved
+```
+
+`hula script approve-remote` / `approve-local` turn exit `4` into
+`{"status":"error","code":"conflicts_resolved","message":…,"changes":…,"assessment":…}`.
+With no HubLaunch server configured, or against a server without merge-time
+conflict resolution, `hula approve` behaves as before.
 
 The merge assessment is **never posted on the PR** — it lives on the dashboard,
 in `hula info`, and at this approve gate. Set
@@ -180,7 +234,10 @@ and PHP 8.3; `android` adds JDK 17 & 21, the Android SDK and Ruby + fastlane, so
 Gradle builds work in the sandbox. Existing Android projects get `android`
 preselected; for a greenfield app, just pick it. Every `hula launch`,
 `hula schedule` and `hula error-watcher --create` uses the configured profile;
-override one task with `--sandbox-profile base|android|android:17|android:21`.
+override one task with `--sandbox-profile base|android|android:17|android:21|lamp|lamp:8.3|lamp:8.4`.
+The `lamp` image adds MariaDB plus a web server on `127.0.0.1:8080` serving the
+repo; `lamp:8.4` (or `sandboxProfile: { type: 'lamp', php: '8.4' }`) selects PHP
+8.4 instead of the default 8.3 for both the web server and the command line.
 The question is asked only once per repo — edit the config to change it.
 iOS builds are not supported (sandboxes are Linux).
 
@@ -276,14 +333,22 @@ and ideas for automating your side of the loop with `hula info`.
 
 ## Project goals
 
-State what your project is for in a committed file, `.hublaunch/goals.md`, and
-HubLaunch will judge incoming requests against it. Before planning anything,
+State what your project is for and HubLaunch stores it as the project's goals,
+then judges incoming requests against them. Before planning anything,
 `/hula-assess` and `/hula-plan` score a request 1–5 on code integrity, project
 goals, security, compatibility, and maintenance burden — so when you triage an
 issue someone else filed, you see an honest verdict (and a safer alternative
 when a score is below 5) before you commit to building it.
 
-The file is plain markdown:
+Set them on the project's **Settings** page, or from the CLI (no editor opens):
+
+```bash
+hula project set goals --file goals.md     # or --text "…", or - to read stdin
+hula project goals                         # print them (--json for scripts)
+hula project set goals --clear             # remove them
+```
+
+The goals are plain markdown:
 
 ```markdown
 # Project goals
@@ -297,11 +362,12 @@ A short paragraph on what the project is for and who it serves.
 - Something the project deliberately does not do
 ```
 
-Because it is **committed** (not gitignored like `hublaunch.config.js`), other
-maintainers and the remote planning sandbox read the same goals. If the file is
-absent, `/hula-assess` and `/hula-plan` infer your goals from the README and
-docs and offer to write it for you — commit it so everyone shares one source of
-truth.
+Because they live on HubLaunch, every maintainer and the remote planning sandbox
+read the same goals — nothing is committed to the repo. If none are saved,
+`/hula-assess` and `/hula-plan` infer your goals from the README and docs and
+ask **once per project** whether to save them; answering "No" is remembered too.
+A repo that already has a committed `.hublaunch/goals.md` has it imported once;
+after that the goals are edited only on HubLaunch.
 
 ## Other commands
 
