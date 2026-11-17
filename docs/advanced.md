@@ -225,9 +225,27 @@ variables, and includes them in the request to the server. Notes:
   configs are unaffected.
 - **Validated early** — if a listed variable is missing from `.env`, or the `.env`
   file is absent, `hula launch` fails before submitting the job.
-- **Reserved names blocked** — system/internal variables (e.g. `PATH`, `HOME`,
-  `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `CODEX_API_KEY`,
-  `PROVIDER_AUTH_TOKEN`, `AWS_SECRET_ACCESS_KEY`) cannot be forwarded.
+- **Platform names blocked** — system/internal variables (e.g. `PATH`, `HOME`,
+  `PROVIDER_AUTH_TOKEN`, `GITHUB_TOKEN`, `AWS_SECRET_ACCESS_KEY`, anything in the
+  `DAYTONA_`/`HULA_`/`RALPH_` families) are always reserved and cannot be
+  forwarded.
+- **Your coding assistant's own provider key is blocked** — the key HubLaunch
+  injects for your configured provider (and its config family) cannot be
+  forwarded, so a forwarded value can never shadow the agent's credential. If
+  your provider is Claude, that means `ANTHROPIC_API_KEY`,
+  `CLAUDE_CODE_OAUTH_TOKEN`, and any `ANTHROPIC_`/`CLAUDE_` variable; the error
+  names the exact variable and explains it is the configured provider's key.
+- **A *different* service's provider key *can* be forwarded** — e.g. when your
+  coding assistant is Claude but your app or an end-to-end test calls OpenAI, you
+  may forward `OPENAI_API_KEY`. It is treated like any other project secret:
+  encrypted at rest, never logged, and available to your code and e2e stage. The
+  agent's own provider env is applied last, so your forwarded key never collides
+  with it. (The blocked set follows your launch's provider(s), so switching your
+  assistant to OpenAI would then block `OPENAI_API_KEY` and free `ANTHROPIC_API_KEY`.)
+- **`"all"` drops reserved names silently** — with `envVars: "all"`, any reserved
+  name (whether by exact name or a reserved family/prefix) is skipped rather than
+  rejected — never an error — and a one-line notice names exactly which variables
+  were dropped, so a harness `.env` (e.g. `HULA_E2E_*`) stays safe under `"all"`.
 - Only forward variables your tests actually need; treat anything you list as
   leaving your machine.
 
@@ -290,10 +308,10 @@ When you omit a step's `model` override (see next section), the server uses a pe
 
 | Step tier | `claude` | `openai` | `openrouter` |
 | --- | --- | --- | --- |
-| implementation, bugfix, mergeConflict | `opus` | `gpt-5.6-sol` | `openrouter/auto` |
-| findBugs review, lintfix, build, summary, verify | `sonnet` | `gpt-5.6-terra` | `openrouter/auto` |
+| implementation, bugfix, mergeConflict | `claude-opus-5-5` (effort `xhigh`) | `gpt-5.6-sol` | `openrouter/auto` |
+| findBugs review, lintfix, build, summary, verify | `claude-sonnet-5-5` (effort `high`) | `gpt-5.6-terra` | `openrouter/auto` |
 
-> **Note:** All pipeline steps in a single launch use the same global provider. Per-step provider selection (e.g., Claude for implementation, OpenAI for testing) is planned for a future release.
+> **Note:** By default all pipeline steps in a single launch use the same global provider. You can run an individual step on a *different* provider with the per-step `steps.<step>.provider` override (see [per-step provider](#per-step-provider-run-the-verify-step-on-a-different-provider) below) — e.g. write the code with one provider and run the verify/merge-assessment step on a stronger or cheaper one. From the **dashboard** launch card this is fully supported today; from the **CLI** the `provider` field validates but supplying the matching provider key from a config file is a follow-up.
 
 ## Configuring per-step model & iteration overrides
 
@@ -307,8 +325,8 @@ project setting, not a per-launch flag):
 export const config = {
   // ...
   steps: {
-    implementation: { model: "opus" },
-    lintfix: { model: "haiku", maxIterations: 2 },
+    implementation: { model: "claude-opus-5-5", effort: "xhigh" },
+    lintfix: { effort: "medium", maxIterations: 2 },
     regression: { skip: true },
   },
 };
@@ -317,17 +335,22 @@ export const config = {
 Each of the 9 keys maps to a pipeline step. All fields are optional; omit a step
 (or the whole `steps` block) to keep the server default:
 
-| Step key         | `model` | `maxIterations` | `skip` | Other |
-| ---------------- | :-----: | :-------------: | :----: | ----- |
-| `implementation` |   ✅    |                 |        |       |
-| `findBugs`       |   ✅    |   ✅ (1–20)     |        | `diffMaxLines` (≥1), `excludeRegex` (string) |
-| `bugfix`         |   ✅    |                 |        |       |
-| `lintfix`        |   ✅    |   ✅ (1–20)     |        |       |
-| `build`          |   ✅    |   ✅ (1–20)     |        |       |
-| `regression`     |         |                 |   ✅   |       |
-| `mergeConflict`  |   ✅    |                 |        |       |
-| `summary`        |   ✅    |   ✅ (1–20)     |        |       |
-| `verify`         |   ✅    |   ✅ (1–20)     |   ✅   |       |
+| Step key         | `model` | `effort` | `provider` | `maxIterations` | `skip` | Other |
+| ---------------- | :-----: | :------: | :--------: | :-------------: | :----: | ----- |
+| `implementation` |   ✅    |    ✅    |    ✅      |                 |        |       |
+| `findBugs`       |   ✅    |    ✅    |    ✅      |   ✅ (1–20)     |        | `diffMaxLines` (≥1), `excludeRegex` (string) |
+| `bugfix`         |   ✅    |    ✅    |    ✅      |                 |        |       |
+| `lintfix`        |   ✅    |    ✅    |    ✅      |   ✅ (1–20)     |        |       |
+| `build`          |   ✅    |    ✅    |    ✅      |   ✅ (1–20)     |        |       |
+| `regression`     |         |          |            |                 |   ✅   |       |
+| `mergeConflict`  |   ✅    |    ✅    |    ✅      |                 |        |       |
+| `summary`        |   ✅    |    ✅    |    ✅      |   ✅ (1–20)     |        |       |
+| `verify`         |   ✅    |    ✅    |    ✅      |   ✅ (1–20)     |   ✅   |       |
+
+`provider` (`{ type: "claude" | "openai" | "openrouter" }`) is documented in
+[per-step provider](#per-step-provider-run-the-verify-step-on-a-different-provider)
+below. `regression` has no LLM call of its own, so it takes no `provider`.
+`effort` applies only to steps that run on the `claude` provider.
 
 `model` values are free-form strings passed straight through to the server and
 interpreted by the selected provider's harness (`claude --model <value>` for
@@ -338,6 +361,15 @@ immediately with a clear error.
 
 When you omit a step's `model`, the server applies its per-provider default for
 that step's tier (see [per-provider model defaults](./advanced.md#per-provider-model-defaults) above).
+
+`effort` sets the Claude Code effort level for a step. It must be one of `low`,
+`medium`, `high`, `xhigh` or `max`; any other value fails at config-load time
+and is rejected by the server. When you omit it, claude steps run at `xhigh`
+(implementation, bugfix, mergeConflict) or `high` (every other step). Effort
+applies to the `claude` provider only: on a step whose provider is `openai` or
+`openrouter` it is ignored, and the run log shows a warning. `bugfix` and
+`mergeConflict` share one setting, so if you set both they must match. Higher
+effort makes a step slower and more expensive.
 
 ### `--skip-regression`
 
@@ -350,6 +382,92 @@ config):
 # Skip regression tests for a single launch
 hula launch feature-auth .hublaunch/plans/my-plan.md --skip-regression
 ```
+
+> **Note — the e2e stage's off-switch is not a `steps.*` key.** The sandbox
+> end-to-end stage is governed entirely by the top-level `e2e` block, not by the
+> `steps` table above. To turn it off, set `e2e.skip: true` (config), pass
+> `--skip-e2e` (per launch), add the `<!-- hula-e2e: skip -->` plan marker, or
+> disable it project-wide from the dashboard settings page. There is no
+> `steps.e2e` entry.
+
+### `--skip-e2e`
+
+As a per-launch counterpart to the config `e2e.skip`, `hula launch` accepts a
+`--skip-e2e` flag that skips the sandbox end-to-end stage for that one invocation
+(it wins over whatever `e2e.skip` is set to in config). A plan containing the
+`<!-- hula-e2e: skip -->` marker has the same effect for that one launch, and a
+project owner can disable the stage for **every** launch from the dashboard
+settings page. A skipped stage is reported as **not executed** (never a forced
+pass). Precedence: project-wide off (dashboard) > per-launch skip (flag / marker
+/ `e2e.skip`) > `e2e.runOnEveryLaunch`.
+
+```bash
+# Skip the sandbox end-to-end stage for a single launch
+hula launch feature-auth .hublaunch/plans/my-plan.md --skip-e2e
+```
+
+### e2e settings when launching from a git worktree
+
+Every launch syncs its `e2e` block onto the project's stored e2e setting, which
+"Verify now" and other server relaunches use. `.hublaunch/hublaunch.config.js` is
+untracked, so each linked git worktree (for example under `.hula-worktrees/`)
+holds its own copy, made when the worktree was created, and those copies go
+stale. A launch from a linked worktree therefore forwards the **main
+checkout's** `e2e` block instead of the worktree's copy. Edit the main
+checkout's file to change the e2e settings.
+
+- When the two copies differ, the launch prints one warning naming only the
+  differing keys and the main checkout's config file — never their values:
+
+  ```
+  ⚠ This worktree's e2e settings differ from the main checkout's (tools); this launch uses the main checkout's. Edit /path/to/repo/.hublaunch/hublaunch.config.js to change them.
+  ```
+- If the main checkout has no config file, the worktree's own block is used,
+  silently.
+- If the main checkout's config exists but can't be read (a syntax error or an
+  invalid value), the launch continues with the worktree's own block and warns
+  once; run any `hula` command from the main checkout to see the error.
+- `e2e.envVars` names still come from the worktree, because their values are
+  read from the worktree's `.env`. The main checkout's `.env` is never read.
+- `--skip-e2e` and the `<!-- hula-e2e: skip -->` plan marker still apply on top.
+- Launching from the main checkout itself, or from any directory that is not a
+  linked worktree, behaves as before. Other config fields still come from the
+  current checkout.
+
+### `e2e.caseFiles` — keep plan test files out of the merge
+
+A plan's runnable e2e cases (`cli` scripts, browser `.mjs` cases, plan-local
+helpers) live on its branch in `.hublaunch/e2e/cases/<tracking-name>/`. By default
+(`caseFiles: 'strip'`) `hula approve` — and dashboard Approve — removes that one
+folder from the branch in a single clean-up commit (marked `[hula-strip-cases]`)
+just before the squash merge, and pins the merge to it, so `main` never receives
+the files; the branch history and `refs/pull/<N>/head` keep them for re-runs.
+Set `'keep'` to merge them as before:
+
+```javascript
+export const config = {
+  e2e: {
+    caseFiles: 'keep', // 'strip' (default) | 'keep'
+  },
+};
+```
+
+- `hula approve` reads the setting from the local config, then (when a server is
+  configured) the project's stored setting, then defaults to `strip`. A launch
+  forwards it, so the dashboard uses the same value; it is also editable on the
+  project's Settings page. It is a merge-time setting and never reaches the
+  sandbox.
+- Only the plan's own folder is removed — never another plan's folder, shared
+  harness files under `.github/scripts/`, or a file that already exists on the
+  base branch. A fork-headed PR is never touched.
+- If GitHub refuses the clean-up push (protected branch, missing permission, the
+  branch moved), `hula approve` exits non-zero **before** merging and says so.
+- When CI re-runs on the clean-up commit, `hula approve` waits up to 5 minutes
+  (polling every 15 s) for the merge to be allowed. If checks are still running
+  it stops with a message to run `hula approve` again, which reuses the same
+  clean-up commit. `HULA_APPROVE_CHECKS_WAIT_SEC` overrides the total wait.
+- Merge confidence does not change across the clean-up commit: evidence recorded
+  at the commit before it keeps counting.
 
 ### Conflict rules (validated locally before any network call)
 
@@ -365,6 +483,39 @@ with the same message the server would return, so misconfigurations fail fast:
   `--skip-regression` and `--regression`, and a config `steps.regression.skip:
   true` combined with a one-off `--regression`:
   `regression.skip and the legacy regression flag are contradictory`
+
+### Per-step provider — run the verify step on a different provider
+
+Every LLM-bearing step defaults to the launch's global provider (`--provider` /
+`config.provider.type`). To run one step on a *different* provider, add a
+`provider` object to that step:
+
+```js
+export const config = {
+  provider: { type: "claude" },   // writes the code
+  steps: {
+    // Run the final verify / merge-assessment step on OpenAI instead.
+    verify: { provider: { type: "openai" } },
+  },
+};
+```
+
+`provider.type` is one of `claude`, `openai`, or `openrouter`; any other value is
+rejected at config-load time. The headline use case is running the
+**verify / merge-assessment** step on a stronger or cheaper provider than the one
+writing the code, but the field is accepted on every LLM step
+(`implementation`, `findBugs`, `bugfix`, `lintfix`, `build`, `mergeConflict`,
+`summary`, `verify`). `regression` has no model call, so it takes no `provider`.
+
+> **Dashboard vs CLI.** From the **dashboard** launch card the per-step provider
+> picker (offered when the chosen credential set holds keys for more than one
+> provider) is fully wired: the server derives the alternate provider's key from
+> your credential set and runs that step on it. From the **CLI**, a
+> `steps.<step>.provider` pointing at a non-global provider *validates*, but the
+> launch also needs that provider's key — wiring the CLI provider keys from a
+> config file is a planned follow-up. Until then, use the dashboard for
+> cross-provider launches. A `steps.<step>.provider` equal to the global
+> provider is a harmless no-op.
 
 ## Merge policy
 
@@ -382,11 +533,20 @@ mergePolicy: { minConfidence: 90, autoMerge: false },
   reach to earn the `ready` verdict. Defaults to `90` when absent.
 - **`autoMerge`** — boolean; opt into server-side auto-merge of `ready` PRs.
   Defaults to `false`.
+- **`autoMergeRiskClasses`** — optional array of **change-risk classes** allowed
+  to auto-merge under the threshold flow (see
+  [Change-risk profile](#change-risk-profile)). **Omitting it keeps today's
+  behaviour** — the risk gate stays off and threshold auto-merge is unchanged.
+  When set, a PR auto-merges only if confidence ≥ threshold **and** every change
+  class of the diff is on this allowlist. Recommended starting value: the three
+  "loud" classes that announce themselves when wrong —
+  `["visible-ui", "visible-cli", "orchestration-loud"]`. Any other class (or the
+  never-allowlisted `unknown`) then **needs a human**, even at confidence 100.
 
 Both keys are optional. The value is forwarded to the server on every
 `hula launch`. **Precedence:** the config wins over the dashboard setting field
 by field; a field absent in both falls back to the server default
-(`minConfidence: 90`, `autoMerge: off`).
+(`minConfidence: 90`, `autoMerge: off`, risk gate off).
 
 ### How `hula approve` uses it
 
@@ -421,6 +581,83 @@ PR already merged) or `git pull --ff-only` to catch your local checkout up.
 The `afterRevert` hook — the symmetric rebuild counterpart of `afterMerge`, run
 by `hula revert --merge` after it squash-merges the revert PR — is likewise
 **local only**: a server-side auto-merge of a revert PR does not trigger it.
+
+### Change-risk profile
+
+Alongside the 0–100 confidence number, the server derives a **change-risk
+profile** — a second, independent signal. Confidence answers *"how sure are we
+the change is correct?"*; the risk profile answers a different question: *"if we
+were wrong, how loudly would the defect announce itself?"* It is derived
+deterministically from the PR diff (paths + hunks), never feeds back into the
+confidence number, and is shown everywhere confidence is — the dashboard (a chip
+beside the number, hover for the triggering files), `hula view` / `hula info`,
+and one extra line on the single confidence PR comment.
+
+A change may carry several classes; the **headline** is the most severe. The
+fixed taxonomy, most-severe first:
+
+| Class | Meaning |
+|---|---|
+| `credentials-env` | touches env/secret handling, reserved-env filtering, or auth |
+| `data-schema` | alters `prisma/schema.prisma` or a migration |
+| `access-visibility` | changes who may see or do what (ownership / authorization / visibility) |
+| `data-write` | creates/updates/deletes/upserts persisted data |
+| `external-side-effect` | posts to GitHub/Slack/email or calls an external API with side effects |
+| `unknown` | matched no known class — **never** auto-mergeable |
+| `orchestration-loud` | worker/queue/dispatcher step that fails loudly on the next run |
+| `visible-cli` | CLI output / print path |
+| `visible-ui` | dashboard component / UI |
+
+The "quiet-damage" group (the first five) can do damage before anyone notices
+and ranks **above** the "loud" group (the last three), which announces itself
+immediately. `unknown` sits between them and is never on an allowlist — an
+unrecognised change always needs a human when the gate is on. The
+`autoMergeRiskClasses` allowlist (above) is the opt-in that turns the gate on;
+absent, the profile is **information only** and threshold auto-merge is
+unchanged.
+
+### Project maturity stage
+
+On top of the change-risk gate, a project can set a **maturity stage** that
+decides *how liberally* a threshold-qualified PR is auto-merged. The stage only
+ever acts **inside** the threshold flow (confidence ≥ threshold with the required
+evidence present) — it never changes the confidence number, the threshold, or the
+"review recommended" label; it only decides whether an otherwise-eligible merge
+**waits** for a person. Auto-merge is **never looser than today by default**.
+
+A plan also records an **origin** at creation — who the change came from:
+`user-prompt` / `user-backlog` (a person started it) vs `agent-backlog` /
+`unknown` (an agent, or an unattributable/legacy item — always treated as
+agent-originated, never guessed as a person). The origin is shown as a small
+label on the plan page, `hula view`, and the API rows.
+
+| Stage | Auto-merge behaviour |
+|---|---|
+| *(unset)* | **Exactly today's behaviour** — the change-risk gate only; origin ignored. Every existing project stays here (no backfill). |
+| `concept` | **Bypasses the change-risk gate** — a qualified PR merges on its own regardless of risk or origin. The one deliberate loosening; only ever applies when a person explicitly selects it (the settings UI shows a plain warning). |
+| `experimental` | Stacks the gates: the risk gate **and** a user-originated plan. Agent/unknown plans **wait** (and raise one follow-up for the plan owner) even when the risk gate passes. The default for *new* projects — stricter than today, never looser. |
+| `mature` | **Exactly the change-risk gate** (every change class on `autoMergeRiskClasses`); origin ignored. |
+| `robust` | **Never** auto-merges. |
+
+The decision and its one-line reason are shown on the plan page, in `hula info` /
+`hula approve` (an `Auto-merge: …` line), and as one extra line on the single
+confidence PR comment. Set the stage from the dashboard project settings, or from
+the CLI:
+
+```bash
+hula project set stage experimental   # concept | experimental | mature | robust
+```
+
+Invalid values are rejected (no editor opens). The stage is also exposed through
+the API (`hula info`, the status route).
+
+The project's goals are set the same way — from the dashboard project settings or
+the CLI, never through an editor:
+
+```bash
+hula project set goals --file goals.md   # or --text "…", - (stdin), --clear
+hula project goals [--json]
+```
 
 ## PR comments
 
@@ -537,6 +774,31 @@ plus measured sandbox minutes) and shown on the launched-plan dashboard next to 
 merge assessment, along with a pre-round-1 cost estimate. A per-run **credit
 budget** (`--groundingBudget`) is a planned follow-up. v1 enforces the round cap,
 the threshold and the diminishing-returns stop, and records each round's cost.
+
+## Settings forward-compatibility
+
+When a newer `hub-launch` adds a setting inside a known block (`e2e`,
+`prComments`, `groundingLoop`) and writes it into your project's
+`hublaunch.config.js`, an **older** installed CLI that predates the key would
+otherwise reject the whole file. To keep your saved login key and other settings
+intact across a version skew, the loader is **forgiving but version-gated**:
+
+- An unrecognized setting **inside a known block** is tolerated — dropped with a
+  warning that names its full dotted path (e.g. `e2e.runOnEveryLaunch`) — **only
+  when** the config declares a CLI `version` newer than the one installed. The
+  warning tells you to run `hula update` to actually use the new setting.
+- Otherwise (the version is absent, the same, or older — i.e. an up-to-date
+  file) an unrecognized setting is a **config error** naming the exact path, so a
+  typo still fails loudly. A genuinely invalid **value** for a known setting also
+  always fails, naming the path, regardless of the declared version.
+- Unknown **top-level** keys keep today's behaviour (silently ignored).
+
+**Maintainer rule:** the published CLI must be **re-released after any change to
+the settings schema** (`src/types/config.schema.ts`), so installed CLIs never lag
+`main` and reject configs written by newer versions. CI reminds you with
+`pnpm run guard:schema-release`, which warns (never fails) while a schema change
+is still waiting for a release; the version itself is bumped only by
+`scripts/release.sh` at release time. Pass `--strict` to make it fail instead.
 
 ## PR-hygiene defaults (`defaults`)
 
@@ -709,9 +971,15 @@ versions stay valid (`version` remains `"1.0"`).
 ### Project-level items and states
 
 On the server, backlog items are **project-owned** (not tied to a single plan),
-so archiving a chat/session never loses them. A server item carries a richer
-state machine than the local file's `open`/`done`:
+so archiving a chat/session never loses them. They live in the **Backlog** tab of
+the project page (Active · Backlog · Archived), which lists the items that have
+not been started yet; clicking a row opens the item's own page. A server item
+carries a richer state machine than the local file's `open`/`done`:
 
+- **`name`** — a kebab-case name, unique among the project's open items and plan
+  tracking names; it is the default tracking name when the item is launched.
+- **owner** — the person who owns the item (default: its creator), changeable to
+  any project member on the item's page.
 - **`type`** — `plan` (the only launchable kind) · `local` · `note` · `external`.
 - **`status`** — `parked` → `ready` → `planned` → `done`, with `archived`
   reachable from any state. A `plan` item with every `blockedBy` ref resolved is
@@ -730,8 +998,14 @@ The REST/tRPC surface is **dual-accept**: it still takes legacy `open`/`done`
 existing CLI versions keep syncing unchanged. Launch a `ready` `plan` item from
 the dashboard or with `hula backlog launch <itemId>`: it opens an editable
 prompt (prefilled from `text` + `detail`) and, on confirm, starts a remote plan,
-sets `launchedPlanId`, and moves the item to `planned`; the item becomes `done`
-when that plan merges.
+sets `launchedPlanId`, and moves the item to `planned` — it leaves the Backlog
+tab. The item becomes `done` when that plan's PR merges, which also resolves the
+`item:` blockers of everything waiting on it; nobody marks it done by hand. If
+the plan is abandoned instead (archived, or its PR closed without merging), the
+item goes back to the backlog as not started. To dismiss an item you don't
+want, **Archive** it on its page: archived items are found through the Backlog
+tab's Status → Archived filter and can be restored; archiving an item does not
+unblock items waiting on it.
 
 ### Dashboard sync
 
@@ -987,11 +1261,13 @@ includes a concrete **Safer alternative** — a modified goal that keeps the
 benefit and drops the drawback. When every category is 5 the title is simply
 "Assessment".
 
-Project goals come from `.hublaunch/goals.md` when it exists (a committed file:
-an H1 `# Project goals`, a short paragraph, a bullet list, and an optional
-`## Non-goals`). When it is absent, goals are inferred from the README and docs,
-listed under "Inferred project goals", and the skill offers to write the file so
-future assessments and remote planning share the same goals. Assessment output
+Project goals come from HubLaunch (set on the project's Settings page or with
+`hula project set goals`; markdown with an H1 `# Project goals`, a short
+paragraph, a bullet list, and an optional `## Non-goals`). A legacy committed
+`.hublaunch/goals.md` is imported once. When no goals are saved, goals are
+inferred from the README and docs, listed under "Inferred project goals", and
+HubLaunch asks at most once per project whether to save them, so future
+assessments and remote planning share the same goals. Assessment output
 stays in chat — nothing is posted to GitHub.
 
 ```bash
