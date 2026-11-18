@@ -7,6 +7,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Merge-order waits ("merge after"): a plan can wait to merge until other plans, PRs or backlog items have merged, so the phases of a multi-phase change can run in parallel and still merge in order (start-blocking `--blocked-by` is unchanged; a wait never delays a start). `hula waits <plan>` lists a plan's waits and `hula waits add|remove <plan> <kind:ref…>` adds or removes them (`plan:<tracking-name|id>`, `pr:owner/repo#N` with `issue:` as an alias, `item:<backlog-item-id>`; a malformed ref exits 1 before any request; removals are recorded on the server). `hula backlog add --merge-after kind:ref` (repeatable, validated like `--blocked-by`; also `hula script backlog-add --merge-after`) sets waits on a backlog item, which are copied onto the plan it launches; `hula backlog list` shows them as `mergeAfter`, separate from blockers. While a wait is open, `hula approve` merges nothing and exits 5 with one `HULA_MERGE_WAITING:` stdout line (`{ message, waits, checked }`); it also exits 5 (`checked: false`) when it can't reach HubLaunch to check, unless you pass `--force`, and `--force` never overrides a confirmed wait. The `approve-remote`/`approve-local` scripts re-emit exit 5 as a `merge_waiting` error, and `hula view`/`hula status` show "Waiting for <A> to merge" and a "merged out of order" note for a plan merged directly on GitHub before its blocker. Older CLIs don't know about waits, and an old `hula approve` can still merge a waiting plan, so update the CLI. Deploy hula-server before releasing this CLI version: against an older server `hula approve` proceeds as before (no waits can exist there) and `hula waits` fails.
+- `ci-log` e2e case type (`job` + `logLines`) in `hula plan validate-cases`; older CLIs reject this driver — update the CLI before validating plans that use it. `hula e2e run` skips `ci-log` cases (CI credits them from the job log).
+- `hula steps <plan>` lists a plan's before/after-merge steps, and `hula steps add|done|ok|resume` adds one, ticks yours, finishes the after-merge checklist (`--permit <id…>` / `--permit-all`; it never ticks anything for you) and resumes stalled after-merge testing. `hula script step-add` lets an assistant add a step (a person's to-do, or an after-merge job an agent may do once a person permits it). `hula view` shows the new stages **merged — your steps** (🧾) and **testing after merge** (🧪). Deploy hula-server before releasing this CLI version: older servers have no step routes.
+- `steps.<step>.effort` (`low` | `medium` | `high` | `xhigh` | `max`) sets the Claude Code effort level per pipeline step, not just for `implementation`. Hosted claude runs now default to `xhigh` for implementation and bug-fix and `high` for every other step, instead of Claude Code's implicit `medium`. Effort is passed to Claude Code as `CLAUDE_CODE_EFFORT_LEVEL`, never as an `--effort` flag. Effort is ignored, with a warning, on steps whose provider is openai or openrouter. Deploy hula-server before releasing this CLI version, because an older server rejects effort on steps other than `implementation`.
+- `hula login --with-token` reads a GitHub token from standard input (for example `printf '%s\n' "$GH_TOKEN" | hula login --url <server> --with-token`) and signs in without opening the browser. A rejected token fails immediately, and the option cannot be combined with `--fresh`.
+- Plan e2e case files now live in the plan's own folder, `.hublaunch/e2e/cases/<tracking-name>/` (`cli` scripts, browser `.mjs` cases and plan-local helpers); the planner prompts name the new home and scripts get the repo root as `HULA_E2E_REPO_ROOT`. The legacy `.github/scripts/cases/` and `.github/e2e/browser/` paths still run.
+- `hula approve` keeps a plan's case files out of `main`: just before the squash merge it pushes one clean-up commit (marked `[hula-strip-cases]`) that deletes only that plan's `.hublaunch/e2e/cases/<name>/` folder, then merges pinned to it with a title and body that leave the clean-up commit out. If the push is refused it stops before merging. When CI re-runs on the clean-up commit it waits up to 5 minutes (`HULA_APPROVE_CHECKS_WAIT_SEC` overrides) and otherwise tells you to run `hula approve` again, which reuses the same clean-up commit. Merge confidence does not change across the clean-up commit.
+- New config setting `e2e.harnessPaths` (repo-relative paths of the project's e2e harness, e.g. `['.github/scripts', '.github/e2e']`; default none), forwarded at launch and stored on the project. The sandbox e2e stage then runs the base branch's current copy of every harness file the plan did not change itself, so a Verify now on an older branch picks up harness fixes from `main`. Older CLIs reject a config containing it (the `e2e` block is strict), so update the CLI before adding it.
+- New config setting `e2e.caseFiles: 'strip' | 'keep'` (default `strip`; `keep` merges the files as before), forwarded at launch so the dashboard Approve uses it too. Older CLIs reject a config containing it (the `e2e` block is strict), so update the CLI before adding it. Deploy hula-server before releasing this CLI version: older servers have no `/api/v1/plans/:id/case-strip` route (the CLI then falls back to `strip` and the server records the clean-up later).
+
+### Changed
+- The merge bar is fixed at 100. `hula approve` merges without asking only at confidence 100 / `ready`; anything lower (including an older stored `ready` at 90) prints `Merge confidence <n>/100 is below the merge bar of 100` and asks, or exits 3 in a non-interactive run (`--force` still merges). `hula info --verify`, `hula view`, `hula approve` and `hula launch --show` print `(merge bar 100)` instead of the stored threshold and, for a plan with after-merge checks, the separate confirmed figure — `Merge confidence: 95 (80% confirmed)/100`. `mergePolicy.minConfidence` in `hublaunch.config.js` is still accepted but no longer used; `hula launch` prints a one-line notice when it is set below 100.
+- A merged plan with no open after-merge steps now moves to the Archive even when backlog items it created are still open. Those items stay on the project backlog and launch on their own. The `open backlog` (📌) stage is no longer produced. `hula view` still shows it if an older server sends it.
+- `hula approve` now lists a plan's unticked pre-merge steps before it looks up the PR, and merges only after you answer yes or pass `--steps-done` (which ticks them); otherwise it exits 1 without merging. It also accepts a plan tracking name instead of an issue number, and after merging prints the plan's after-merge checklist. `hula todo` now lists your open plan steps.
+- In CI (`CI` set) or inside a HubLaunch sandbox, `hula login` (and `hula contribute`) no longer start the browser GitHub sign-in that nobody can finish there. Without a saved login or `--with-token` they stop at once with a message saying so. Everywhere else, including when an assistant runs `hula login` on your own computer, the browser sign-in works as before.
+
+### Fixed
+- `hula launch` from a linked git worktree now syncs the main checkout's `e2e` settings instead of the worktree's possibly stale copy, and warns (key names only) when the copies differ. `e2e.envVars` names still come from the worktree.
+- `hula login` now saves the API key into a CommonJS `.hublaunch/hublaunch.config.js` (`module.exports = {…}`), which it previously reported as saved but left unchanged. It also no longer adds a second `hulaProjectUrl` above one the config already has.
+
+## [1.47.0] - 2026-11-12
+
+### Added
+
+- **`hula contribute --scout`: check a repo before you contribute to it.** A
+  read-only report on whether a third-party repo is open to outside
+  contributors: whether the door is open, whether anyone responds, who decides,
+  how crowded it is, project health, how to get in, and whether the repo fits
+  the HubLaunch sandbox (Node 22/24, Python 3.12, PHP 8.3). It ends with a
+  verdict (*Good target* / *Good with conditions* / *Poor target* / *Closed to
+  outsiders*), the odds as a band (never a percentage), and caveats. It only
+  reads from GitHub, uses no AI step, and caches each repo for 24 hours under
+  `~/.hublaunch/cache/scout`. Flags: `--json` (one JSON object on stdout),
+  `--refresh` (skip the cache), `--window 30-120` (sample PRs created 30–120
+  days ago). Plain `hula contribute` now runs the check before forking and
+  prints a summary. On *Poor target* or *Closed to outsiders*, a terminal run
+  asks **Fork anyway?** (default No), and `--yes` or a non-TTY run warns and
+  continues. A failed check only warns. `--skip-scout` skips the check. Rules it
+  finds (issue assignment, discuss-first, PR title format, DCO, CLA, AI
+  disclosure) are saved as `contributionReminders` in the guest config, and
+  `hula launch` prints them as a warning before building but never blocks.
+  Built with AI assistance.
+- **The `lamp` sandbox now serves your PHP app on port 8080, and can run PHP
+  8.4.** Every `lamp` run starts a web server on `127.0.0.1:8080` (inside the
+  sandbox only) serving the repo's `public/` directory, or the repo root, with
+  the run's own database, so an e2e `ready: curl http://127.0.0.1:8080/…` gate
+  has something to poll. PHP 8.4 is installed beside the default 8.3; select it
+  with `--sandbox-profile lamp:8.4` or `sandboxProfile: { type: 'lamp', php:
+  '8.4' }` (a new `hula init` choice), and it drives both the web server and the
+  command-line `php`/`composer`. Unknown versions are rejected by the CLI and
+  the server. Built with AI assistance.
+- **`hula approve` fixes merge conflicts right before merging, and automatic
+  conflict fixes stop.** HubLaunch used to start a paid sandbox fix run for every
+  conflicting open PR after each push to `main` (and again on PR events), so cost
+  grew with open PRs and merges. Now pushes to `main` and new PR commits only
+  label conflicting PRs `detected` on the dashboard (no PR comment, no fix run),
+  and the post-run re-check never re-queues a fix. Instead, `hula approve` checks
+  for conflicts first: on a HubLaunch-built PR it resolves them once, waits with
+  progress, shows each file the fix changed (+/−), a GitHub compare link and the
+  refreshed merge score, and asks **Merge now?** (Yes → the normal merge, No →
+  stop; a later `hula approve` merges without another fix). Busy plans, PRs
+  HubLaunch didn't build, and failed fixes exit 1 with a clear message.
+  Non-interactive runs exit with the new code **4** and one
+  `HULA_MERGE_CONFLICTS_RESOLVED:` stdout line; `hula script approve-remote` /
+  `approve-local` re-emit it as `code: "conflicts_resolved"`, and the
+  `/hula-approve` skill shows the change summary and asks Merge now / Later. No
+  server configured, or an older server, behaves as before. Built with AI
+  assistance.
+
+## [1.46.0] - 2026-11-11
+
+### Added
+- Project goals are stored on HubLaunch (`hula project goals`, `hula project set goals`), and the save-goals question is asked at most once per project. `.hublaunch/goals.md` is no longer needed.
+- `hula conflict retry <trackingName>` retries a merge-conflict fix. Failed attempts under the cap now retry automatically.
+- `hula plan retry`, `hula plan requeue` and `hula task requeue` recover failed or stuck plans and tasks.
+- `hula e2e record <plan>` records end-to-end tests you ran locally.
+- `hula assessments prune` removes old merge-assessment comments. Assessments now appear on the dashboard only.
+- `hula project set stage <value>` controls how freely auto-merge fires.
+- A new `lamp` sandbox profile (PHP + MariaDB + Node 22).
+- `hula info` shows change risk, the style review, and token and cost totals.
+
+### Changed
+- Planning and launching is now one review. `/hula-followup` asks once, and `go` launches with the recommended answers.
+- `hula info` and `hula launch` print the full log to the terminal. `--open` opens it in an editor instead.
+- `hula plan followup` no longer cuts off its JSON output, and gains `--fields` and `--omit-text`.
+- Hosted runs use the repo's pinned Node version.
+- Contribution PRs cite the Responsible Contribution Guidelines only where the project allows links.
+
+### Fixed
+- `hula approve` no longer reports a failure after a successful merge, and it now uses the newest merge confidence.
+- Settings from a newer CLI version are skipped with a warning instead of wiping your login.
+- `hula launch` won't open a duplicate PR, and it reports push errors accurately.
+- `hula plan answer` checks follow-up questions before sending them.
+
 ## [1.44.2] - 2026-11-05
 
 ### Added
