@@ -7,6 +7,145 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Saved e2e secret names are forwarded from your `.env`.** `hula launch`, `hula credentials sync` and remote planning now read the e2e secret names saved on the project (`GET /api/v1/project/e2e`) and forward their values from your `.env` (non-empty, non-reserved), as well as the names you list locally. A saved name missing from your `.env` is not warned about when the project's Shared run variables supply it. Against an older server that can't return the saved setting, the CLI prints one line, "Couldn't read the project's saved e2e secret names; forwarding only the names in your local config.", and launches as before.
+- **`e2e.baseUrl`: tell the sandbox where your app listens.** A new optional
+  `e2e` config key (http/https only, no user name or password, at most 300
+  characters), for example `baseUrl: 'http://localhost:3000'` next to the
+  `setup` lines that start the app and the `ready` check that waits for it. The
+  sandbox's built-in plan case runner joins relative `http` case paths to it
+  and hands it to `browser` cases. Set it with `hula e2e setup --base-url <url>`
+  (saved to the HubLaunch project settings, or the local config with
+  `--to local`); `hula e2e show` and `hula e2e doctor` display it. Update the
+  CLI on every machine that reads that config: an older CLI ignores the key
+  with a warning when the config records this newer CLI version (as
+  `hula e2e setup --to local` does) and rejects it otherwise. Built with AI
+  assistance.
+- **`hula plan validate-cases` warns about cases this repo's sandbox can't
+  run.** In a repo without HubLaunch's own e2e harness
+  (`.github/scripts/hula-e2e-cases.sh`, looked up from the current directory's
+  git root), every active `cli` case with `args`, `api` case and `sandbox-run`
+  case gets one warning naming its index and the case to write instead (a
+  `script` or `http` case). It is a warning only: the exit code and `ok` are
+  unchanged, even with `--require-run-fields`. Built with AI assistance.
+- **Planner guidance for repos outside hula-server.** The run-fields section of
+  the planning instructions (`hula instructions planning`, `plan-generate`,
+  `plan-initiate`) gains an "Outside hula-server" rule: write `script`, `http`
+  (a relative `/path` needs `e2e.baseUrl`) or `browser` cases
+  (`export default async function ({ page, baseUrl, expect, env })`, run on the
+  project's own Playwright), never `args`, `api` or `sandbox-run` cases, and
+  keep labelled `(<tracking-name> ACn)` tests in the project's own suite for
+  logic-level criteria. Built with AI assistance.
+
+### Changed
+- **Shared run variables win for e2e secrets.** For the run's e2e secret names (your launch's `e2e.envVars`, else the names saved on the project), the project's non-empty Shared run variable is used in the sandbox even when your `.env` has a different value. The launch names each one, never its value: `NAME: using the project's shared value; your .env value is ignored in the sandbox`. Other names keep the rule that your own value wins, and an empty `.env` value never hides a shared value. To use your own token for one launch, list `e2e.envVars` locally without that name.
+- **Missing-secret advice names Shared run variables first.** The launch warning, `hula e2e setup` and `hula e2e doctor` now say: "Add NAME under project Settings → Launching → Shared run variables (every launch gets it, and it wins for e2e secrets), or put it in your `.env` and run `hula credentials sync` (your launches only)."
+
+### Fixed
+- **Reserved e2e secret names are refused and dropped.** `hula e2e setup` refuses a reserved name such as `AWS_ACCESS_KEY_ID`, `NODE_ENV` or any `HULA_*` name, with the same reason text as the server ("use a name that isn't reserved"). `hula launch` drops reserved names from the forwarded e2e names with one names-only warning: `Not forwarding reserved e2e secret name(s): NAME — the sandbox can never receive them; list a name that isn't reserved.` A reserved name no longer makes the e2e stage report "couldn't run".
+- **A skipped beforeLaunch hook is named.** When the repository has `.hublaunch/hooks/beforeLaunch.ts` but your `.hublaunch/hublaunch.config.js` has no `hooks.beforeLaunch`, `hula launch` warns that it won't run the hook and names the line to add, and `hula e2e doctor` adds the same note. The sandbox runs the hook only for dashboard, phone and draft-and-launch launches, so a CLI launch got none of its per-launch resources without saying so.
+
+## [1.48.0] - 2026-11-23
+
+### Highlights
+- **Set up end-to-end tests without changing your repo.** `hula e2e setup` saves your test commands to HubLaunch, `hula e2e doctor` tells you what's missing before you launch, and `hula e2e show` shows where each setting comes from. Guide: https://www.hublaunch.site/docs/e2e
+- **Merge only at 100.** The merge bar is now always 100. Below that, `hula approve` asks first (or exits 3 when it can't ask); `--force` still merges.
+- **Merge in order.** `hula waits` lets a plan wait for another plan, PR or backlog item to merge first.
+- **Plan steps.** `hula steps` lists and ticks a plan's before- and after-merge steps, and `hula approve` checks unticked steps before merging.
+
+### Also new
+- `hula login --with-token` signs in with a GitHub token from standard input (for CI and sandboxes).
+- Per-step `effort` and `provider` settings in `hublaunch.config.js`.
+- `hula backlog list` shows each item's name and owner.
+- `hula info --deploy` shows whether a plan's merge commit is live in production.
+- A plan's test files stay out of `main`: `hula approve` removes them just before merging.
+
+### Before you upgrade
+- Update the CLI on every machine. Older versions reject the new `e2e` config keys and don't know about merge waits.
+- Launching no longer changes the saved e2e settings. If you relied on that, run `hula e2e setup` once.
+- A missing e2e secret no longer stops a launch. The e2e stage reports which one is missing instead.
+- Repos that don't pin Node now get Node 24 in the sandbox.
+
+### Fixed
+- `hula login` now really saves the API key in CommonJS config files.
+- Launching from a git worktree uses the main checkout's e2e settings.
+- A failed plan upload shows the real `git push` error.
+- Plan file names work on Windows.
+
+## [1.47.0] - 2026-11-12
+
+### Added
+
+- **`hula contribute --scout`: check a repo before you contribute to it.** A
+  read-only report on whether a third-party repo is open to outside
+  contributors: whether the door is open, whether anyone responds, who decides,
+  how crowded it is, project health, how to get in, and whether the repo fits
+  the HubLaunch sandbox (Node 22/24, Python 3.12, PHP 8.3). It ends with a
+  verdict (*Good target* / *Good with conditions* / *Poor target* / *Closed to
+  outsiders*), the odds as a band (never a percentage), and caveats. It only
+  reads from GitHub, uses no AI step, and caches each repo for 24 hours under
+  `~/.hublaunch/cache/scout`. Flags: `--json` (one JSON object on stdout),
+  `--refresh` (skip the cache), `--window 30-120` (sample PRs created 30–120
+  days ago). Plain `hula contribute` now runs the check before forking and
+  prints a summary. On *Poor target* or *Closed to outsiders*, a terminal run
+  asks **Fork anyway?** (default No), and `--yes` or a non-TTY run warns and
+  continues. A failed check only warns. `--skip-scout` skips the check. Rules it
+  finds (issue assignment, discuss-first, PR title format, DCO, CLA, AI
+  disclosure) are saved as `contributionReminders` in the guest config, and
+  `hula launch` prints them as a warning before building but never blocks.
+  Built with AI assistance.
+- **The `lamp` sandbox now serves your PHP app on port 8080, and can run PHP
+  8.4.** Every `lamp` run starts a web server on `127.0.0.1:8080` (inside the
+  sandbox only) serving the repo's `public/` directory, or the repo root, with
+  the run's own database, so an e2e `ready: curl http://127.0.0.1:8080/…` gate
+  has something to poll. PHP 8.4 is installed beside the default 8.3; select it
+  with `--sandbox-profile lamp:8.4` or `sandboxProfile: { type: 'lamp', php:
+  '8.4' }` (a new `hula init` choice), and it drives both the web server and the
+  command-line `php`/`composer`. Unknown versions are rejected by the CLI and
+  the server. Built with AI assistance.
+- **`hula approve` fixes merge conflicts right before merging, and automatic
+  conflict fixes stop.** HubLaunch used to start a paid sandbox fix run for every
+  conflicting open PR after each push to `main` (and again on PR events), so cost
+  grew with open PRs and merges. Now pushes to `main` and new PR commits only
+  label conflicting PRs `detected` on the dashboard (no PR comment, no fix run),
+  and the post-run re-check never re-queues a fix. Instead, `hula approve` checks
+  for conflicts first: on a HubLaunch-built PR it resolves them once, waits with
+  progress, shows each file the fix changed (+/−), a GitHub compare link and the
+  refreshed merge score, and asks **Merge now?** (Yes → the normal merge, No →
+  stop; a later `hula approve` merges without another fix). Busy plans, PRs
+  HubLaunch didn't build, and failed fixes exit 1 with a clear message.
+  Non-interactive runs exit with the new code **4** and one
+  `HULA_MERGE_CONFLICTS_RESOLVED:` stdout line; `hula script approve-remote` /
+  `approve-local` re-emit it as `code: "conflicts_resolved"`, and the
+  `/hula-approve` skill shows the change summary and asks Merge now / Later. No
+  server configured, or an older server, behaves as before. Built with AI
+  assistance.
+
+## [1.46.0] - 2026-11-11
+
+### Added
+- Project goals are stored on HubLaunch (`hula project goals`, `hula project set goals`), and the save-goals question is asked at most once per project. `.hublaunch/goals.md` is no longer needed.
+- `hula conflict retry <trackingName>` retries a merge-conflict fix. Failed attempts under the cap now retry automatically.
+- `hula plan retry`, `hula plan requeue` and `hula task requeue` recover failed or stuck plans and tasks.
+- `hula e2e record <plan>` records end-to-end tests you ran locally.
+- `hula assessments prune` removes old merge-assessment comments. Assessments now appear on the dashboard only.
+- `hula project set stage <value>` controls how freely auto-merge fires.
+- A new `lamp` sandbox profile (PHP + MariaDB + Node 22).
+- `hula info` shows change risk, the style review, and token and cost totals.
+
+### Changed
+- Planning and launching is now one review. `/hula-followup` asks once, and `go` launches with the recommended answers.
+- `hula info` and `hula launch` print the full log to the terminal. `--open` opens it in an editor instead.
+- `hula plan followup` no longer cuts off its JSON output, and gains `--fields` and `--omit-text`.
+- Hosted runs use the repo's pinned Node version.
+- Contribution PRs cite the Responsible Contribution Guidelines only where the project allows links.
+
+### Fixed
+- `hula approve` no longer reports a failure after a successful merge, and it now uses the newest merge confidence.
+- Settings from a newer CLI version are skipped with a warning instead of wiping your login.
+- `hula launch` won't open a duplicate PR, and it reports push errors accurately.
+- `hula plan answer` checks follow-up questions before sending them.
+
 ## [1.44.2] - 2026-11-05
 
 ### Added
