@@ -10,7 +10,10 @@ Complete reference for every hula CLI command.
 | `hula login`   | —     | Authenticate with GitHub + hula-project                           |
 | `hula init`    | —     | Initialize configuration                                          |
 | `hula create`  | —     | Create issue from plan file                                       |
-| `hula approve` | —     | Merge PR and clean up                                             |
+| `hula approve` | —     | Merge PR and clean up (asks you to confirm the plan's pre-merge steps first) |
+| `hula steps`   | —     | A plan's before/after-merge steps: list, `add`, `done`, `ok` (after-merge checklist), `resume` |
+| `hula waits`   | —     | A plan's merge-order waits (it merges only after these merge): list, `add`, `remove` |
+| `hula todo`    | —     | Your open plan steps across projects (to-dos before / after merge) |
 | `hula launch`  | —     | Trigger a launch job on hula-project server                       |
 | `hula contribute` | —  | Set up a fork clone to contribute to a repo you don't own (guest mode) |
 | `hula schedule` | —     | Trigger or schedule an execute-action (e.g. `--built-in harden`) |
@@ -18,8 +21,11 @@ Complete reference for every hula CLI command.
 | `hula info`    | —     | View plan info (logs, diff, initial, lessons, verify, clientSessionId) |
 | `hula reassess` | —    | Recompute a plan's merge confidence from all its evidence and print it |
 | `hula e2e record` | — | Record one local per-case proof at HEAD; raises the plan's proven share |
-| `hula e2e run` | — | Record each runnable case's outcome (reusing the harness where available) |
+| `hula e2e run` | — | Run the configured e2e commands locally (or the harness) and record each runnable case's outcome |
 | `hula e2e status` | — | List every case with its state + provenance and the proven share |
+| `hula e2e setup` | — | Set up the sandbox e2e stage — any test tool, nothing committed (HubLaunch project settings by default) |
+| `hula e2e doctor` | — | Check the e2e setup before launching (names only); exits 0 only when Ready |
+| `hula e2e show` | — | Print the saved, local and repo e2e settings side by side (secret names only) |
 | `hula view`    | —     | List tracked plans with status, priority, PR, and merge confidence |
 | `hula archive` | —     | Archive a plan (close its issue, keep the record); `--unarchive` to reverse |
 | `hula explain` | —     | View or edit a plan's plain-language explanation; `--update "<text>"` to set, `--json` for scripts |
@@ -27,7 +33,9 @@ Complete reference for every hula CLI command.
 | `hula credentials sync` | — | Save the current credentials to HubLaunch as the `default` set (web + phone planning) |
 | `hula credentials list` | — | List the credential sets stored on HubLaunch (hints only) |
 | `hula init web` | — | Enable web + phone planning and sync now (`hula init web disable` turns it off) |
-| `hula plan <subcommand>` | — | Remote-planning command group (used by `/hula-plan` and `/hula-followup`) |
+| `hula plan <subcommand>` | — | Remote-planning command group (used by `/hula-plan` and `/hula-followup`); includes `plan requeue <planId\|name>` to rescue a stuck plan |
+| `hula task requeue <taskId>` | — | Requeue a stuck `queued` task whose queue entry was lost (free; never debits a credit) |
+| `hula conflict retry <trackingName>` | — | Manually retry a plan's merge-conflict resolution (free; works even past the attempt cap). Prints the created task id; `409` when a run is active, `400` when the PR isn't conflicting |
 | `hula script <name>` | — | Run a bundled cross-platform workflow script (used by the Agent Skills) |
 | `hula instructions <name>` | — | Print a bundled instruction doc (`planning`, `proceed`, `skill-creation`, `assess`, `plan-initiate`, `plan-generate`) |
 | `hula session-hook` | — | Claude Code PreToolUse hook that captures launch-session provenance |
@@ -93,6 +101,16 @@ init web disable`** (disable, and after a confirmation delete the stored set
 from HubLaunch). Pass `--yes` to skip the confirmations. See
 [`hula credentials`](#hula-credentials).
 
+**End-to-end tests (optional step).** Once you are logged in, `hula init` offers
+to let HubLaunch run your end-to-end tests (default **No**) only when it finds
+Playwright, Cypress or an `e2e` / `test:e2e` package.json script at the
+repository root, nothing is set up yet, and you can change the project's
+settings. Otherwise it explains in one line why it didn't ask: the tests are
+already set up (or turned off), none were found — HubLaunch still checks each
+plan's own test cases — or only someone with admin, maintain or write access
+can turn them on. Yes runs the same short [`hula e2e setup`](#hula-e2e-setup-doctor-show--set-up-the-sandbox-e2e-stage)
+flow, saving to the project settings.
+
 **Automatic login:** when `hula init` finishes and you are not yet authenticated
 (no HubLaunch API key, or no saved GitHub token), it flows straight into the
 login flow — the same GitHub Device Flow + HubLaunch key exchange as
@@ -112,6 +130,7 @@ Authenticate with GitHub and (optionally) the hula-project server.
 hula login                     # Authenticate with GitHub
 hula login --url <server-url>  # Also link to a hula-project server
 hula login --fresh             # Always open the browser to sign in again
+hula login --with-token        # Read a GitHub token from stdin (no browser)
 ```
 
 When a valid GitHub login is already stored on the machine (e.g. after logging
@@ -120,6 +139,23 @@ printing `🔑 Using your saved GitHub login`. Pass `--fresh` to force the
 browser device flow, for example to switch GitHub accounts. If the saved login
 is no longer valid or has expired, login falls back to the browser flow
 automatically.
+
+Where no browser is available (servers, build machines, CI), pipe a GitHub
+token in instead:
+
+```bash
+printf '%s\n' "$GH_TOKEN" | hula login --url <server-url> --with-token
+```
+
+The token must be able to read your GitHub profile and email and have write
+access to the repository. With `--with-token`, login never opens the browser
+and a rejected token fails immediately. The token is saved as your GitHub login
+on that machine (like any other sign-in). `--with-token` cannot be combined
+with `--fresh`.
+
+In CI (`CI` set) or a HubLaunch sandbox, `hula login` never starts the browser
+sign-in. Without a saved login or `--with-token` it stops with a message saying
+so, instead of waiting for a browser nobody can use.
 
 When the project has `saveCredentials: true` and a provider key is configured,
 a successful login also saves the project's `default` credential set to
@@ -139,6 +175,11 @@ hula contribute https://github.com/<owner>/<repo>    # repo URL (with or without
 hula contribute https://github.com/<owner>/<repo>/issues/42   # issue URL
 hula contribute <owner/repo> --dir ./my-clone        # clone into a specific directory
 hula contribute <owner/repo> --yes                   # non-interactive: print the remaining steps
+hula contribute <owner/repo> --scout                 # read-only repo report only (no fork, no clone)
+hula contribute <owner/repo> --scout --json          # the report as one JSON object on stdout
+hula contribute <owner/repo> --scout --refresh       # ignore the 24h cache
+hula contribute <owner/repo> --scout --window 30-120 # sample PRs created 30–120 days ago
+hula contribute <owner/repo> --skip-scout            # set up without the repo report
 ```
 
 The command:
@@ -148,15 +189,24 @@ The command:
 2. **Stops if you already have push access** to the target and points you at the
    normal owner setup (clone it, then `hula init` + `hula login`) — no fork
    needed.
-3. Creates **or reuses** your fork of the upstream (best-effort enables Actions
+3. **Checks the repo (read-only)** and prints a short summary: a verdict
+   (*Good target* / *Good with conditions* / *Poor target* / *Closed to
+   outsiders*), the odds as a band, the evidence, and any steps (for example
+   "Get the issue assigned to you first"). When the verdict is *Poor target* or
+   *Closed to outsiders*, a terminal run asks **Fork anyway?** (default No);
+   with `--yes` / no TTY it prints a warning and continues. If the check fails
+   it only warns — it never stops the setup. `--skip-scout` skips it.
+4. Creates **or reuses** your fork of the upstream (best-effort enables Actions
    and mutes the fork's notifications).
-4. Clones the **fork** into `./<repo>` (or `--dir`), with `origin` = your fork
+5. Clones the **fork** into `./<repo>` (or `--dir`), with `origin` = your fork
    and `upstream` = the parent repo.
-5. Writes a minimal guest `.hublaunch/hublaunch.config.js` (`contributionMode:
+6. Writes a minimal guest `.hublaunch/hublaunch.config.js` (`contributionMode:
    true`, the fork as `hulaProject`, the fork's default branch as
-   `uploadBranch`) and `.git/info/exclude` entries that keep HubLaunch artifacts
+   `uploadBranch`, and — when the repo check found rules — a
+   `contributionReminders` list that `hula launch` prints as a warning before
+   building, never blocking) and `.git/info/exclude` entries that keep HubLaunch artifacts
    off the fork. It does **not** run full `hula init`.
-6. Guides the **GitHub-App install on the fork** and runs `hula login` inside
+7. Guides the **GitHub-App install on the fork** and runs `hula login` inside
    the clone. `hula login` requires **write** access on `origin`, which you have
    on your fork but not on the read-only upstream — this is why the command only
    ever clones the fork. Installing the App is an interactive GitHub consent
@@ -172,6 +222,23 @@ PR.
 | ------------- | -------------------------------------------------------------------- |
 | `--dir <path>`| Directory to clone the fork into (defaults to `./<repo>`)            |
 | `-y, --yes`   | Non-interactive: skip the guided App-install/login and print the steps |
+| `--scout`     | Only print the read-only repo report and exit — no fork, no clone, no directory created |
+| `--json`      | With `--scout`: write the report as one JSON object on stdout; logs go to stderr |
+| `--refresh`   | Ignore the 24h report cache (`~/.hublaunch/cache/scout/`) |
+| `--window <from-to>` | PR sample window in days ago (default `90-180`); the window's dates are always printed |
+| `--skip-scout`| Do not run the repo report before forking. (Named `--skip-scout`, not `--no-scout`, so it never clashes with `--scout`.) |
+
+### The repo report (`--scout`)
+
+`hula contribute <target> --scout` accepts every target form above (an issue URL
+is reduced to its repo) and prints nine sections: **Door open**, **Does anyone
+respond**, **Who decides**, **How crowded**, **Health**, **How to get in**,
+**Fit for the HubLaunch sandbox**, **Verdict** and **Caveats**. It only reads
+from GitHub (REST `GET`s and GraphQL queries), uses your saved login or
+`GITHUB_TOKEN` when there is one (without a token the sample is smaller and has
+no reply data), and caches the result per repo for 24 hours. See
+[Check a repo before you fork](./contributing-to-others.md#check-a-repo-before-you-fork---scout)
+for what each section means and how the verdict is decided.
 
 See [Contributing to someone else's repository](./contributing-to-others.md) for
 the full lifecycle, AI-assistance disclosure, and maintainer etiquette.
@@ -187,14 +254,53 @@ hula approve                   # Interactive
 hula approve 123               # Merge PR for issue #123
 hula approve 123 --no-delete   # Keep branch after merge
 hula approve 123 --no-remove   # Keep issue in tracking
-hula approve 123 --force       # Merge even when confidence is below threshold
+hula approve 123 --force       # Merge even when confidence is below the merge bar (100),
+                               # or when HubLaunch can't be reached to check merge-order waits
+hula approve my-plan           # By plan tracking name
+hula approve 123 --steps-done  # Confirm (tick) every pre-merge step, then merge
 ```
+
+**Pre-merge steps.** When a HubLaunch server is configured, `hula approve` first
+fetches the plan's steps — before any PR lookup, CI wait or merge — and lists
+every unticked pre-merge step a person must do as `<do this> — <why>`. Then:
+
+- with `--steps-done`, it ticks them through the API and continues;
+- in an interactive terminal, it asks `Have you done all of these? (y/N)` and
+  ticks them on yes;
+- otherwise it exits **1** without merging.
+
+After a successful merge it prints the plan's after-merge checklist (your steps,
+and each agent step as `I permit an agent to …`) with the hint
+`Run "hula steps ok <plan>" (or open the dashboard) to finish.`
+
+**Merge-order waits.** A plan can wait to merge until other plans, PRs or
+backlog items have merged (see [`hula waits`](#hula-waits)). When a HubLaunch
+server is configured, `hula approve` checks this first of all — before the
+pre-merge steps, the PR lookup or any merge-conflict fix. If the plan still
+waits for anything, it lists each open wait, prints how to remove one
+(`hula waits remove <plan> <kind:ref>`), writes one machine-readable line to
+stdout and exits with **code 5** without merging (no `gh` call, no conflict fix):
+
+```
+HULA_MERGE_WAITING:{"message":"Waiting for phase-1 to merge","waits":[…],"checked":true}
+```
+
+If the server is configured but can't be reached to check (network error,
+timeout, 5xx, 401/403), it also exits 5, with `"checked": false` and
+`"waits": []`, unless you pass `--force`. For merge-order waits `--force` covers
+only that "could not check" case: it **never** merges a plan with a confirmed
+open wait — removing the wait is the only way through. An older server without merge-waits (a 404) can
+hold no waits, so `hula approve` proceeds; with no server configured nothing
+changes. The `approve-remote`/`approve-local` scripts re-emit exit 5 as
+`{"status":"error","code":"merge_waiting","message","waits","checked"}`.
 
 **Merge-confidence gate.** Before merging, `hula approve` fetches the PR's
 stored merge assessment and gates on it (see
-[Merge policy](advanced.md#merge-policy)). When the verdict is `ready`, it
-merges straight away. Otherwise it prints the confidence, threshold, verdict,
-concerns, and recommended end-user test steps, then:
+[Merge policy](advanced.md#merge-policy)). The merge bar is fixed at 100: when
+the verdict is `ready` at 100, it merges straight away. Otherwise (anything
+below 100, including an older stored `ready` at 90) it prints the confidence
+(with `(<n>% confirmed)` for a plan with after-merge requirements), the merge
+bar, the verdict, concerns, and recommended end-user test steps, then:
 
 - in an interactive terminal, asks `Merge anyway? (y/n)` (default `n`);
 - in a non-interactive context, exits with **code 3** and a message telling you
@@ -216,9 +322,22 @@ Trigger a launch job on the hula-project server. The server runs an AI coding ag
 
 ```bash
 hula launch <issueName> <planPath>
-hula launch --show <name>     # Show job status
-hula launch --logs <name>     # Show job logs
+hula launch --show <name>              # Show job status
+hula launch --logs <name>             # Print the FULL stored run log to stdout
+hula launch --logs <name> --open      # Open the log in an editor (TTY only; --editor is a deprecated alias)
+hula launch --logs <name> --from 0 --lines 200  # Print a line range window [0, 200)
 ```
+
+`hula launch --logs <name>` prints the **full** stored run log (head through
+tail) to stdout by default — not just the last `--lines`. Pass `--open` to open
+it in your configured editor instead (`--editor` is a deprecated alias); the
+editor is only used on a TTY, so piping or redirecting always prints. `--from`
+(0-based start line) with `--lines` requests a range window of the full log.
+
+The full run log is retained **uncapped** in storage (`Task.logContent`); the
+logs route can return it in ranges (`from`/`lines`) with the head always
+reachable from `--from 0`. Only the live-tail preview (`Task.lastOutput`, shown
+by `--type output`) is trimmed (32 KB).
 
 **Resume from a specific step after a failure:**
 
@@ -304,8 +423,8 @@ hula schedule --cancel-schedule <scheduleId>
 hula schedule --run-now <scheduleId>
 
 # Skill-authoring helpers (primarily used by the /hula-schedule skill)
-hula schedule --publish-skill .hublaunch/skills/2026-06-19-16:35-remove-unreachable-code.md
-hula schedule --delete-skill .hublaunch/skills/2026-06-19-16:35-remove-unreachable-code.md
+hula schedule --publish-skill .hublaunch/skills/2026-06-19-16-35-remove-unreachable-code.md
+hula schedule --delete-skill .hublaunch/skills/2026-06-19-16-35-remove-unreachable-code.md
 ```
 
 > **Tip**: the `/hula-schedule` agent skill drives this command from plain language
@@ -381,12 +500,16 @@ hula info <trackingName> [flags]
 
 | Flag                | Description                                                    |
 | ------------------- | ------------------------------------------------------------- |
-| `--logs`            | Full stored run log                                           |
+| `--logs`            | Full stored run log — printed to stdout by default            |
+| `--open`            | For `--logs`, open the log in an editor (TTY only)            |
+| `--from <n>`        | For `--logs`, 0-based start line for a range window           |
 | `--lastLogs`        | Last N lines of live output (uses `--lines`)                  |
 | `--diff`            | PR unified diff (fetched server-side from GitHub)             |
 | `--initial`         | Initial PR body / AI summary                                  |
 | `--lessons`         | Lessons-learned content                                       |
 | `--verify`          | Merge assessment (confidence, verdict, categories, steps)     |
+| `--cost`            | Total tokens and provider cost for the whole plan journey      |
+| `--cost-by-stage`   | With `--cost`, also print the per-part / per-stage breakdown    |
 | `--clientSessionId` | Claude Code session id that launched the plan                 |
 | `--lines <n>`       | Trailing line count for `--lastLogs` (default: 100)           |
 | `-r, --raw`         | For a single content key, print raw content to stdout         |
@@ -394,8 +517,9 @@ hula info <trackingName> [flags]
 | `--api-key <key>`   | Hula API key (overrides config)                               |
 
 Content keys (`--logs`, `--lastLogs`, `--diff`, `--initial`, `--lessons`,
-`--verify`) route to `GET /api/v1/info/:planName`. `--clientSessionId` routes to
-the status endpoint `GET /api/v1/ralph-run/:name/status`.
+`--verify`, `--cost`) route to `GET /api/v1/info/:planName`. `--clientSessionId`
+routes to the status endpoint `GET /api/v1/ralph-run/:name/status`. Cost is shown
+only on demand — default `hula info` output is unchanged.
 
 **Output rules** (let K = number of requested keys):
 
@@ -405,6 +529,16 @@ the status endpoint `GET /api/v1/ralph-run/:name/status`.
   (header, category scores, concerns, end-user steps, then the full JSON). It is
   never opened in an editor. `--raw` prints a single compact JSON line. When the
   server has no assessment, prints `No merge assessment available for <name>.`
+  When the latest verification run failed **before** it could re-verify
+  (checkout / sandbox init / install), a `verification could not run: <reason>
+  (task <id>)` line is printed above the assessment and the confidence number is
+  left unchanged (never blanked). `--raw` then emits `{ assessment, verifyError }`.
+- **K == 1, `--cost`** → the plan total (total tokens + total provider cost) is
+  printed to stdout. With `--cost-by-stage` the per-journey-part (Planning,
+  Implementation, Fix, Verify) and per-stage breakdown is appended. Missing
+  telemetry renders `not available` (never `$0`/`0 tokens`); a part planned on
+  your own machine renders `not measured (planned on your computer)`. `--raw`
+  prints the raw `PlanTokenCost` JSON on one line.
 - **K == 1, `--clientSessionId`** → the session id (or `null`) is printed plain.
 - **K >= 2** → the requested keys are merged into one JSON object on stdout.
 - **K == 0** → error (exit 1). Pass at least one flag.
@@ -415,13 +549,17 @@ GitHub read soft-failed; the client handles this without crashing.
 ### Examples
 
 ```bash
-hula info my-feature --logs                 # opens the full run log in the editor
+hula info my-feature --logs                 # prints the full run log to stdout; add --open to open it in an editor
+hula info my-feature --logs --open           # opens the full run log in the editor (TTY only)
+hula info my-feature --logs --from 0 --lines 200  # prints a line range window [0, 200) of the full log
 hula info my-feature --lastLogs --lines 50   # opens the last 50 lines of live output
 hula info my-feature --diff                  # opens the PR diff
 hula info my-feature --initial               # opens the PR body / AI summary
 hula info my-feature --lessons               # opens lessons-learned content
 hula info my-feature --verify                # prints the merge assessment to stdout
 hula info my-feature --verify --raw          # prints the assessment as one JSON line
+hula info my-feature --cost                  # prints total tokens + total provider cost
+hula info my-feature --cost --cost-by-stage  # also prints the per-part / per-stage breakdown
 hula info my-feature --clientSessionId       # prints the launching session id (plain)
 hula info my-feature --logs --diff           # prints a merged JSON object {logs, diff}
 hula info my-feature --logs --clientSessionId# prints merged JSON across both endpoints
@@ -447,14 +585,41 @@ newest authoritative assessment.
 hula reassess <trackingName>
 ```
 
-The merge-confidence headline is the **proven share** of the plan's acceptance
-criteria ∪ its End-to-End Test Cases: `round(100 × proven / total)`, counting a
-criterion proven only when evidence executed at the live PR head covers it. The
+The merge-confidence headline is the **proven share** of the plan's
+**before-merge** requirement set — acceptance criteria ∪ End-to-End Test Cases ∪
+the four Tier-1 gates (check, build, regression, e2e):
+`round(100 × proven / total)`, counting a requirement proven only when evidence
+executed at the live PR head covers it. After-merge cases (`"phase":
+"postMerge"`) are left out, and so is an acceptance criterion whose linked cases
+are all after-merge; an after-merge case never counts its criterion as proven.
+They feed only the display-only **confirmed** figure — the share of the whole
+plan confirmed so far, after-merge checks included — printed beside the number
+as `95 (80% confirmed)` and in the basis as `after-merge: 1 pending` (for
+example `proven 6/6 at a1b2c3d · after-merge: 1 pending · 0 flags`). The merge
+bar is fixed at 100.
+Each gate is one ledger row after the criteria/cases (`GATE-check` …
+`GATE-e2e`, shown as `#0 Tier-1 gate: …` in `hula e2e status`): proven when its
+command executed and passed at the head, failed when it executed and failed, and
+**unproven** when it simply didn't run (for example the duration budget was spent
+or an e2e precondition failed). A gate a run **skipped on purpose** — no command
+configured for it, nothing it covers changed, or switched off — is **not
+applicable**: it is left out of the share, and the basis names it as
+`n/a: <gate>` (for example `proven 6/6 at a1b2c3d · n/a: e2e · 0 flags`). Run-fact
+evidence rows such as `Tier-1 check executed` count only toward their gate, never
+toward a criterion. The
 legacy heuristics (unresolved references, unplanned files, change size, docs,
 coverage-by-name, removed assertions) are **reviewer flags** — they never change
-the number. The only thing that caps it below threshold is showable test
-tampering. The printed `Basis` line and proof ledger show exactly what was
-proven, failed or unproven.
+the number. Besides a failed requirement or check (capped at 99), the only
+thing that caps it below the merge bar is showable test tampering. The printed `Basis` line and proof ledger show exactly what was
+proven, failed or unproven. Ledger rows are keyed by position (`AC1`, `AC2`, …).
+Evidence whose claim starts with either that key or the criterion's own leading
+id (for example `AC112` or `AC118a`) counts toward it, and each evidence row
+counts toward at most one criterion. When several criteria start with the same
+id (for example three `AC112: …` criteria), the rest of the claim's or case's
+text decides which one it counts toward; a bare shared id counts toward the
+first. For plans stored before cases kept their wording, the server reads that
+wording from the plan file on the PR branch instead. End-to-end cases are
+matched to criteria the same way.
 
 | Flag              | Description                                            |
 | ----------------- | ------------------------------------------------------ |
@@ -478,6 +643,16 @@ re-earned from a fresh execution even when no code changed. Evidence is recorded
 via `POST /api/v1/plans/:id/evidence`. Against an older server without these
 routes the command reports that reassess is unsupported.
 
+A verification-only run checks out the PR branch when it still exists. For a
+**merged plan whose branch was deleted** (`merge --delete-branch`) the run checks
+out **by commit sha** instead — the PR merge commit for a merged plan, else the
+stored PR head — so a merged plan can still be re-verified from the code on
+`main`. For such a plan, evidence recorded at **either** the stored PR head or
+the merge commit counts toward the number, and the basis names the commit as
+`proven n/m at <sha7> (merged as <sha7>)`. If the run fails before it can
+re-verify, `hula info --verify` surfaces `verification could not run` and the
+number is left unchanged.
+
 ```bash
 hula reassess my-feature            # recompute from stored evidence + provenance
 hula reassess my-feature --execute  # refresh the PR head, then recompute
@@ -490,8 +665,14 @@ hula reassess my-feature --raw      # the full result as one JSON line
 
 Record and inspect **per-case** end-to-end proofs for a launched plan. These
 feed the plan's **proven share** — a parallel, read-only metric (proven ÷ total
-over the plan's acceptance criteria ∪ its End-to-End Test Cases) shown beside the
-merge-confidence number on the dashboard.
+over the plan's acceptance criteria ∪ its End-to-End Test Cases ∪ the four Tier-1
+gates: check, build, regression, e2e) shown beside the merge-confidence number on
+the dashboard. Gate rows show as `#0 Tier-1 gate: …`; they are proven only by an
+executed gate result at the PR head (a `local` record can prove `check`/`build`
+but never `regression`/`e2e`, and a per-case proof never proves a gate). A gate a
+run skipped on purpose (not configured, nothing it covers changed, switched off)
+is not applicable and left out; a gate that simply didn't run counts as unproven.
+A plan with no criteria or cases still shows no proven share.
 
 > **Proven share vs. merge confidence.** A `local` proof at the PR head counts
 > toward the proven share **uncapped**, with full provenance (`proven by: sandbox
@@ -523,9 +704,17 @@ non-head record is stored for provenance but never counts. An unknown or
 ambiguous `--case`, or an empty `--evidence`, is a non-zero CLI error.
 
 `hula e2e run` records the deterministic outcome of each selected case — `browser`
-cases are skipped, `not-testable`/struck cases are recorded `not-testable`, and a
-runnable case with no local runner is recorded `not-testable` rather than failing
-the run — reusing the per-branch harness where it is available and ready.
+cases are skipped and `not-testable`/struck cases are recorded `not-testable`.
+In hula-server (which ships `.github/scripts/hula-e2e-run.sh`) it reuses that
+per-branch harness when it is ready, and otherwise records nothing. In **any
+other project** it runs your configured e2e commands locally — the same ones the
+sandbox would run (the repo's `ralph.md` block, else this computer's
+`e2e.commands`, else the HubLaunch project settings; commands saved on HubLaunch
+are shown and need a confirmation, or `--yes`, before they run) — with
+`HULA_E2E_TRACKING_NAME` set, parses their `<!-- hula-e2e-report v1 -->` table
+(and the JUnit file when `junitReport` is set), and records each row that names a
+selected case (`pass` / `fail`; `⏭` as `not-testable`), printing `recorded=<n>`.
+With nothing configured it exits 1 and says to run `hula e2e setup`.
 
 `hula e2e status` lists every case with its state (`proven`/`failed`/
 `not-testable`/`unproven`) and provenance (source · actor · short sha · time),
@@ -540,6 +729,173 @@ hula e2e run my-feature --cases 1,2,4
 The dashboard mirrors this: the plan page lists each case with its state,
 provenance and evidence text, and a **mark-proven** control (which requires
 attached evidence text) records the same kind of `local` proof.
+
+### `hula e2e setup`, `doctor`, `show` — set up the sandbox e2e stage
+
+HubLaunch runs your project's own end-to-end tests (any tool) in the sandbox
+after each PR is created; passing tests prove acceptance criteria. Guide:
+<https://www.hublaunch.site/docs/e2e>.
+
+```bash
+hula e2e setup                                   # interactive: finds Playwright, Cypress or an e2e/test:e2e script, asks for the test command, everything else under "More options"
+hula e2e setup --command "npx playwright test" --tool chromium \
+  --secret E2E_TEST_TOKEN --junit test-results/junit.xml --yes
+hula e2e setup --to local --command "npm run e2e" --yes   # this computer only
+hula e2e setup --clear --yes                     # remove the saved commands
+hula e2e doctor [--check-ready] [--credential-set <name>] [--json]
+hula e2e show [--json]
+```
+
+| `setup` flag | Description |
+| --- | --- |
+| `--command <cmd>` | An e2e command, one shell line (repeatable) |
+| `--setup <cmd>` | A setup command run before the tests (repeatable) |
+| `--tool <name>` | A program to install: `chromium` (a web browser for Playwright tests) or `psql` (the Postgres command line) (repeatable) |
+| `--secret <NAME>` | A secret **name** the tests need — never a value (repeatable) |
+| `--ready <cmd>` | Readiness check polled until it exits 0 |
+| `--junit <path>` | Optional JUnit XML path or glob the tests write |
+| `--to <dest>` | `project` (default: HubLaunch project settings, shared with your team — interactive runs always save here unless you pass `--to`), `local` (`.hublaunch/hublaunch.config.js`, this computer only), or `ralph-md` (writes a `RALPH_E2E_COMMANDS` block you commit; refused in contribution mode). `local` and `ralph-md` are flag-only |
+| `--clear` | Remove the saved shell-command settings |
+| `--yes` | Non-interactive |
+
+- **Who can save.** Saved commands run next to every launcher's secrets, so only
+  people who can change code in the GitHub repository (admin, maintain or write)
+  can save them; every change records who and when. Anyone else gets a clear
+  refusal (save for your own launches with `--to local`).
+- **Interactive run.** It checks your login and edit rights before any
+  question, pre-fills the saved settings (a flag wins), suggests the command it
+  finds (always for you to confirm), catches a bare `playwright` / `cypress`
+  (offering `npx playwright test` / `npx cypress run`) and warns when the tool
+  isn't in `package.json`. Leaving the test command empty saves nothing and
+  exits 0 — HubLaunch still checks each plan's own test cases.
+- **Secrets.** Setup never asks for secrets. Put secret values under project
+  Settings → Launching → Shared run variables (every run gets them), or in
+  `.env` followed by `hula credentials sync`. `--secret` still lists a **name**
+  so `doctor` can warn when it's missing; an interactive run keeps the names
+  already saved.
+- **Which commands run:** the repo's `ralph.md` `RALPH_E2E_COMMANDS` block (the
+  saved ones are then ignored, with a note), else the launching computer's
+  `e2e.commands` (that launch only — the saved settings are never changed by a
+  launch), else the saved HubLaunch settings.
+- `setup` ends with the `doctor` summary; it exits 0 whenever the save succeeded.
+- Tools and secret names are compared as sets: the `doctor`'s local-changes line
+  (and a launch's notice) ignore their order; commands and setup lines keep
+  theirs, since they run in sequence.
+
+`hula e2e doctor` prints the state (**Not set up** / **Set up, but secrets
+missing for you** / **Ready** / **Turned off**), where the commands come from,
+the fields your local config changes, the secret **names** missing from your
+`.env` and from your saved credentials (`--credential-set`, default `default`),
+the tools, the next step and the guide link. `--check-ready` also runs the
+readiness check locally (60 s cap). It exits 0 only when the state is Ready and
+no check failed; `--json` prints `{ project, state, commandsSource, commands,
+savedIgnored, localDiff, missingInEnvFile, missingForYou, credentialSet, tools,
+ready, changedBy, serverReachable, canEdit, nextStep, docsUrl }` (`canEdit`:
+whether you can change the saved settings; `null` when HubLaunch is
+unreachable).
+
+`hula e2e show` prints the saved HubLaunch settings (with who changed them and
+when), this computer's `e2e` block and the repo's `ralph.md` block; `--json`
+prints `{ saved: { e2eEnabled, config, changedBy }, local, repo }`.
+
+---
+
+## `hula steps`
+
+Each plan carries a checklist of work **around** the plan: things a person must
+do before or after the merge, and jobs an agent should do after the merge
+(re-running checks that can only run after merge, clean-ups). Pre-merge steps
+must be ticked before Approve can merge; after the merge the plan reads
+`postMerge` ("Merged — your steps") until you finish the after-merge checklist.
+
+```bash
+hula steps my-plan                    # list the three groups (before merge / after merge / agent)
+hula steps add my-plan --phase postMerge --actor user --text "Announce the change" --why "customers asked"
+hula steps add my-plan --phase postMerge --actor ai --text "Re-run the production smoke test"
+hula steps done my-plan <stepId> ...  # tick your steps
+hula steps ok my-plan --permit <id>   # finish the after-merge checklist; --permit-all permits every agent step
+hula steps resume my-plan             # re-run stalled after-merge testing
+```
+
+`<plan>` is a tracking name or an issue number in the current project
+(`--project owner/repo` to pick another). Steps you add are recorded as yours
+(`source: person`). Agent steps are never run without permission: `hula steps
+ok` ticks nothing implicitly — it refuses (listing the open steps) until every
+after-merge step of yours is done — and only the agent steps you pass to
+`--permit` (or all with `--permit-all`) run; the rest are declined and never run.
+Permitted steps run in a verify-only sandbox at the merge commit while the plan
+reads `postMergeTesting`; if one fails, a fix plan starts automatically (it is
+never auto-merged).
+
+`hula todo` shows your open plan steps across projects (the same items, in the
+format older CLIs print), and `hula todo --done <id>` ticks one.
+
+---
+
+## `hula waits`
+
+A plan can **wait to merge** ("merge after") until other plans, GitHub PRs or
+backlog items have merged. This is separate from a backlog `--blocked-by`
+blocker, which delays when work *starts*: a merge-order wait never delays a plan
+starting, running or being verified — it only holds the **merge**. Use it to run
+the phases of a multi-phase change in parallel and still merge them in order.
+
+```bash
+hula waits my-plan                                   # list (default): each wait, open / merged / closed
+hula waits add phase-2 plan:phase-1                  # phase-2 merges only after phase-1 has merged
+hula waits add phase-3 plan:phase-2 pr:acme/api#42   # several waits at once
+hula waits remove phase-3 pr:acme/api#42             # remove a wait (recorded: who and when)
+```
+
+| Flag                     | Description                           |
+| ------------------------ | ------------------------------------- |
+| `--project <owner/repo>` | Project (default: this repo)          |
+| `--url <url>`            | Override the hula-project server URL  |
+| `--api-key <key>`        | Override the API key                  |
+
+`<plan>` is a tracking name or an issue number in the current project
+(`hula waits list <plan>` is the same as `hula waits <plan>`). Each wait is
+`kind:ref`:
+
+- `plan:<tracking-name|plan-id>` — another plan; a tracking name is looked up in
+  the waiting plan's project;
+- `pr:owner/repo#N` — a GitHub PR (`issue:owner/repo#N` is accepted as an alias);
+- `item:<backlog-item-id>` — a backlog item.
+
+A malformed ref exits **1** before any request is sent. The server rejects a
+wait on the plan itself, a circular chain of waits, and a plan or item that
+isn't in your projects (unknown and foreign ids get the same "not found"
+message), and refuses to add a wait to a plan that has already merged.
+
+A wait clears on its own, checked live against the blocker's real state (not
+just the merge webhook): when the blocker plan merges, the backlog item is done
+(or its plan merges), or a PR HubLaunch tracks merges. Otherwise:
+
+- a blocker **closed or archived without merging** keeps the plan waiting — it
+  reads `Waiting for <A> to merge — it was closed; remove the wait?`;
+- an issue **closing** never clears a wait; only a PR merge does;
+- a PR in a repo HubLaunch doesn't watch never clears on its own (`clears only
+  when removed (repo not connected)`) — remove the wait once it has merged.
+
+There is no "merge anyway": removing the wait is the only way through. Only
+project members can add or remove waits; every change is recorded in the audit
+log (who and when) and shown on the plan page's **Merge after** card, where you
+can also add and remove waits. When a plan's last wait clears on its own, the
+plan's owner gets one in-app (bell) notification — no Slack, webhook or desktop
+push. Removing a wait by hand sends nothing.
+
+While any wait is open, no HubLaunch merge path merges the plan: the dashboard
+Approve shows a "Waiting to merge" dialog, `hula approve` exits 5 (see
+[`hula approve`](#hula-approve)), and auto-merge holds it (`mergeable — waiting
+for <A> to merge`, reason `merge-wait`). A merge done directly on GitHub is not
+blocked; the plan is marked **merged out of order** instead (see
+[Lifecycle stages](#lifecycle-stages)).
+
+Backlog items carry waits too (`hula backlog add --merge-after kind:ref`); they
+are copied onto the plan the item launches (see
+[Project-level backlog](#project-level-backlog-hula-backlog)). The REST routes are
+`GET`/`POST`/`DELETE /api/v1/plans/:id/merge-waits` (`POST` body
+`{ kind, ref }`; `DELETE ?kind=&ref=`).
 
 ---
 
@@ -720,10 +1076,17 @@ Backlog scripts (the per-chat, dashboard-synced backlog):
 | Script | What it does |
 | ------ | ------------ |
 | `backlog-init -- <key>` | Create the per-chat backlog file if absent (idempotent) |
-| `backlog-add -- <key> "<text>" [--project <o>/<r> --tracking-name <n>\|--issue <N>] [--type plan\|local\|note\|external] [--detail-file <path>] [--blocked-by kind:ref ...]` | Append an item; best-effort push to the dashboard. `--type` sets the item kind (default `plan`); `--detail-file` attaches markdown context (path validated under the repo root or OS temp dir); `--blocked-by` adds a typed blocker (repeatable; `kind` ∈ `plan\|pr\|item\|issue`, `ref` is `owner/repo#N` for pr/issue or a plan/item id) |
+| `backlog-add -- <key> "<text>" [--project <o>/<r> --tracking-name <n>\|--issue <N>] [--type plan\|local\|note\|external] [--detail-file <path>] [--blocked-by kind:ref ...] [--merge-after kind:ref ...]` | Append an item; best-effort push to the dashboard. `--type` sets the item kind (default `plan`); `--detail-file` attaches markdown context (path validated under the repo root or OS temp dir); `--blocked-by` adds a typed blocker (repeatable; `kind` ∈ `plan\|pr\|item\|issue`, `ref` is `owner/repo#N` for pr/issue or a plan/item id); `--merge-after` adds a merge-order wait with the same `kind:ref` format (repeatable; see [`hula waits`](#hula-waits)) |
 | `backlog-resync -- <key> --project <o>/<r> (--tracking-name <n>\|--issue <N>)` | Retry the push for any unsynced items |
 | `backlog-pull -- <key> --project <o>/<r> (--tracking-name <n>\|--issue <N>)` | Two-way sync: push unsynced, merge the dashboard's items by `remoteId`, push back local `done` |
 | `backlog-list -- [<key>] [--project <o>/<r> (--tracking-name <n>\|--issue <N>)] [--all]` | Print the backlog as JSON — from the local file, the server, or both merged; `--all` includes done items |
+
+Plan-step script (non-code work around a plan — code changes for later go in the
+backlog instead):
+
+| Script | What it does |
+| ------ | ------------ |
+| `step-add -- --project <o>/<r> (--tracking-name <n>\|--issue <N>) --phase preMerge\|postMerge --actor user\|ai --text "<text>" [--why "<why>"] [--kind check\|action]` | Add a step to the plan's checklist (`source: llm`). `--actor user` is a person's to-do (pre-merge steps gate Approve); `--actor ai --phase postMerge` is an agent job a person must permit before it runs. An AI step before merge is rejected. Prints `{ status, planId, stepId, step }`; exit 1 on a bad argument / unknown plan / rejected step, 2 when no server is configured |
 
 `backlog-list` works with a key alone (local file), a plan target alone (the
 server's items — e.g. from another machine), or both (pull then list). See
@@ -740,15 +1103,29 @@ JSON object on stdout.
 
 | Command | What it does |
 | ------- | ------------ |
-| `hula backlog add --text "<item>" [--project <o>/<r>] [--type plan\|local\|note\|external] [--detail-file <path>] [--blocked-by kind:ref ...]` | Create a project-owned item (project defaults to the git remote) |
-| `hula backlog list [--project <o>/<r>] [--type <t>] [--status <s>]` | List the project's active items (disabled + archived hidden); flags filter by type/status. Surfaces a grooming line for `parked` items untouched 60+ days |
+| `hula backlog add --text "<item>" [--name <name>] [--project <o>/<r>] [--type plan\|local\|note\|external] [--detail-file <path>] [--blocked-by kind:ref ...] [--merge-after kind:ref ...]` | Create a project-owned item (project defaults to the git remote). `--name` sets its kebab-case name (unique among the project's open items and plan names; a clash is rejected); without it the server derives one from the text. `--blocked-by` delays the item's **start**; `--merge-after` (repeatable, validated like `--blocked-by`) makes the plan it launches wait to **merge** (see below). You become the item's owner |
+| `hula backlog list [--project <o>/<r>] [--type <t>] [--status <s>]` | List the project's not-started items — `blocked`, `ready` and `parked`, the dashboard's Backlog tab — with each item's `name` and `owner` (GitHub username). Launched (`planned`), `done`, disabled and archived items are left out; `--status <s>` lists items with that stored status instead. Surfaces a grooming line for `parked` items untouched 60+ days |
 | `hula backlog launch <itemId> [--project <o>/<r>] [--prompt "<text>"] [--yes]` | Launch a `ready` `plan` item: prints the prefilled prompt (text + detail); with `--yes` it starts a remote plan and links it back (`launchedPlanId`, status `planned`) |
+
+Launched and finished items leave the list on their own: a launched item is
+`planned` until its plan's PR merges, then it becomes `done` and every item
+waiting on it is unblocked — no "Mark done" step. If the plan is abandoned
+(archived, or its PR closed without merging) the item returns to the backlog.
 
 A `plan` item with every blocker resolved is `ready` (orange dot in the
 dashboard) but **starts nothing** on its own — Launch is always explicit. PR,
 issue, plan, and item blockers auto-resolve when the HubLaunch App observes them
 land on installed repos; external/uninstalled refs are resolved by a manual tick
 in the dashboard.
+
+`--blocked-by` and `--merge-after` take the same `kind:ref` refs but mean
+different things. `--blocked-by` keeps the item from **starting**: it is not
+`ready` until every blocker resolves. `--merge-after` never delays the start —
+the item can be `ready` and launched straight away — but the plan it launches
+won't merge until each ref has merged (the waits are copied onto that plan; see
+[`hula waits`](#hula-waits)). Use `--merge-after` for phases that can be built in
+parallel but must land in order. `hula backlog list` shows an item's waits as a
+separate `mergeAfter` array, apart from its `blockers`.
 
 ---
 
@@ -768,6 +1145,8 @@ hula plan understanding <planId> --file <markdown> [--local]
 hula plan context <planId> --file <markdown> [--assessment-file <md>] [--questions <json>] [--local]
 hula plan plan-text <planId> --file <planPath> [--local]
 hula plan draft-and-launch <planId> [--test] [--handoff <user>]
+hula plan retry <planId|name>
+hula plan requeue <planId|name>
 ```
 
 - **`start`** records a planning run. Mode is `--local` / `--remote`, or auto:
@@ -781,6 +1160,21 @@ hula plan draft-and-launch <planId> [--test] [--handoff <user>]
   **`context`** / **`plan-text`** persist each planning artifact; and
   **`draft-and-launch`** hands the confirmed plan to the server to draft and
   launch automatically.
+- **`retry`** re-queues a failed plan job (most often a rejected
+  `plan-generate`) from the stored understanding, reusing the plan's stored
+  credentials. It accepts a **plan id or a tracking name** (resolved within the
+  configured project — 0 or >1 matches is a clear exit-1 error). It refuses
+  clearly (exit 1) when the plan is not in a retryable state (e.g. already
+  launched, or no failed task). When a `plan-generate` run failed, its read
+  record now carries the failure reason + output tail (shown by `wait` and on
+  the plan page), so you can see why before retrying.
+- **`answer`** accepts each follow-up in `newQuestions` with either
+  `questionText` or the alias `question` (and an optional `order`, `rationale`,
+  `options`); an entry with no text fails locally before any network call. Its
+  JSON prints `unanswered` (the plan's remaining unanswered questions) and, when
+  the server returned them, `newQuestions` with the stored `order` HubLaunch
+  assigned each follow-up — refer to follow-ups by those numbers. Over-cap
+  follow-ups join the last round (no error).
 - When `--file` is in the plan-initiate layout (H2 `Assessment` … `Questions`),
   **`context`** splits it itself: the Assessment body becomes `assessment`, the
   fenced json in `## Questions` becomes `questions`, and the rest is sent as
@@ -794,9 +1188,58 @@ hula plan draft-and-launch <planId> [--test] [--handoff <user>]
   their JSON. `/hula-followup` does **not** pass `--local` (its writes are
   allowed in both modes).
 
+- **`requeue`** rescues a **stuck** plan — one whose latest task is still
+  `queued` but whose Redis `queue:pending` entry was lost (e.g. a platform
+  outage), so the dispatcher never picks it up again. It accepts a **plan id or a
+  tracking name** (resolved within the configured project — 0 or >1 matches is a
+  clear exit-1 error). It re-adds the task to the queue at its **original**
+  priority (its first-enqueue timestamp, not now), is idempotent (a task already
+  in the queue is a no-op), refuses a task that is not `queued`, and — when the
+  task record is gone — marks the plan failed instead of re-adding. It **never
+  debits a credit** (the run never started, so the rescue is free). The same
+  action is on each plan-list row and the plan detail page under a **Stuck in
+  queue** badge. To requeue a specific task directly, see
+  [`hula task requeue`](#hula-task).
+
+  Beyond this manual action, the server-side **queue sweep** now reconciles
+  these orphans automatically: every run it re-enqueues any `queued` task that is
+  missing from `queue:pending` and older than the stuck threshold, and — after
+  `HULA_RECONCILE_MAX_RETRIES` (default 5) consecutive unsuccessful rescue cycles
+  — marks it failed (the `enqueue` platform-fault stage) with a notification.
+
 All subcommands accept `--url <serverUrl>` and `--api-key <key>` overrides with
 the same precedence as `hula info`. See [Advanced Usage](advanced.md) for the
 full remote-planning flow.
+
+---
+
+## `hula task`
+
+The task command group. Like `hula plan`, every subcommand prints exactly one
+JSON object on stdout (logs go to stderr).
+
+```bash
+hula task requeue <taskId>
+```
+
+- **`requeue`** re-adds a stuck `queued` task to the queue at its original
+  priority — the task-id-keyed form of [`hula plan requeue`](#hula-plan). Same
+  semantics: idempotent, refuses a non-`queued` task, 404s when the task record
+  is gone, and never debits a credit.
+
+Accepts `--url` / `--api-key` overrides with the same precedence as `hula info`.
+
+> **Tuning stuck detection.** A plan is flagged **stuck** once its latest task
+> has been `queued` longer than `HULA_STUCK_QUEUED_THRESHOLD_MS` (server-side,
+> default `600000` ms / 10 minutes) **and** is absent from the deployment's
+> `queue:pending` set. The automatic reconcile sweep reuses this same threshold
+> (so a task is never auto-rescued before it is shown as stuck) and is further
+> tuned by `HULA_RECONCILE_MAX_RETRIES` (consecutive rescue cycles before giving
+> up, default `5`) and `HULA_RECONCILE_LOG_MAX` (how many recent reconcile
+> actions the admin report retains, default `50`). Admins can inspect the
+> DB-queued vs dispatch-queued counts and the last reconcile actions at
+> `GET /api/v1/admin/queue` (admin-only; non-admins get a 404), alongside the
+> per-deployment `GET /api/v1/admin/queue-namespaces` observability endpoint.
 
 ---
 
@@ -867,7 +1310,8 @@ retirement:
 ```
 analyzing → backlog → QUESTIONS → UNDERSTOOD → GENERATE_PLAN → LAUNCHED
           → initialWaiting → waiting → ready → failed
-          → backlogBlocked → failedMerge → completed → archived
+          → postMerge → postMergeTesting
+          → failedMerge → completed → archived
 ```
 
 - **`analyzing`** — a planning job is in flight.
@@ -875,15 +1319,31 @@ analyzing → backlog → QUESTIONS → UNDERSTOOD → GENERATE_PLAN → LAUNCHE
 - **`QUESTIONS … LAUNCHED`** — the planning stages.
 - **`initialWaiting … ready`** — the post-launch tracking statuses.
 - **`failed`** — the planning job or the tracked run failed.
-- **`backlogBlocked`** (📌 open backlog) — the PR is merged but backlog items are
-  still open. Stays in the active list until they are done.
-- **`failedMerge`** (🚨 deploy failed) — the PR is merged, no backlog is open, but
-  the recorded deployment failed. Stays in the active list.
-- **`completed`** — auto-derived: the plan's PR is merged, no backlog item is
-  open, and the deployment succeeded **or** the project records no deployments
-  at all. A plan with no PR is never auto-completed; a merged plan whose deploy
-  is still pending stays `ready`.
+- **`postMerge`** (🧾 merged — your steps) — the PR merged and the plan's
+  after-merge checklist is waiting for you (`hula steps ok`, or OK in the
+  dashboard dialog). Plans merged before plan steps existed skip it.
+- **`postMergeTesting`** (🧪 testing after merge) — permitted after-merge agent
+  steps are running (or stalled — `hula steps resume`).
+- **`failedMerge`** (🚨 deploy failed) — the PR is merged, but the recorded
+  deployment failed. Stays in the active list.
+- **`completed`** — auto-derived: the plan's PR is merged and the deployment
+  succeeded **or** the project records no deployments at all. Open backlog items
+  the plan created never hold it here. They stay on the project backlog and
+  launch on their own. A plan with no PR is never auto-completed; a merged plan
+  whose deploy is still pending stays `ready`.
 - **`archived`** — set by `hula archive` (terminal, retained).
+
+Merge-order waits (see [`hula waits`](#hula-waits)) are not a stage of their own.
+At `ready`, a plan with an open wait reads `Waiting for <A> to merge` (or
+`Waiting for <A> and N more to merge`; `Waiting for <A> to merge — it was closed;
+remove the wait?` when a blocker closed without merging) in the dashboard,
+`GET /api/v1/plans`, `hula view` and `hula status`. At earlier stages the row
+shows a `merges after <A>` chip instead. A plan that merged while a wait was
+still open (merged directly on GitHub) is marked **merged out of order**: a chip
+on its row, `mergedOutOfOrder` in `GET /api/v1/plans`, and a
+`merged out of order` suffix in `hula view` / `hula status`. If the blocker
+turns out to have merged first (its merge was just recorded later), the mark is
+removed.
 
 The active plan list is sorted earliest-stage-first, with priority as the
 within-stage tiebreaker. `completed` and `archived` plans are hidden from the
